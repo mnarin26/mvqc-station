@@ -50,19 +50,34 @@ mvqc/
   requirements.txt  # station runtime deps
 ```
 
-## Quick start — station (development)
+## Hızlı başlangıç — CM5 (canlı istasyon)
+
+İstasyon zaten kuruluysa (`~/mvqc` mevcut, venv hazır):
 
 ```bash
-cd mvqc
+cd ~/mvqc && source .venv/bin/activate
+cd app && MVQC_CONFIG=../config/app.yaml python -m station.cli serve
+```
+
+Tarayıcı: **http://cm5-101.local:8000** (veya `http://<istasyon-ip>:8000`)
+
+Kapatmak için terminalde `Ctrl+C`. Arka planda systemd kullanıyorsan: `systemctl restart mvqc-app.service`
+
+---
+
+## Quick start — station (ilk kurulum / development)
+
+```bash
+cd ~/mvqc   # veya klonladığın dizin
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-MVQC_CONFIG=config/app.yaml python -m station.cli migrate
+cd app && MVQC_CONFIG=../config/app.yaml python -m station.cli migrate
 cd app && MVQC_CONFIG=../config/app.yaml python -m station.cli serve
-# open http://localhost:8000  (mock camera works with no hardware)
+# http://localhost:8000  (mock camera works with no hardware)
 ```
 
 The served HMI at `station/web/index.html` is dependency-free and works
-immediately. To build the richer React HMI, see `app/frontend/README.md`.
+immediately (Help sekmesi dahil). To build the richer React HMI, see `app/frontend/README.md`.
 
 ## Provisioning — station (production)
 
@@ -157,4 +172,3 @@ Acceptance gate: FILLED recall ≥ 0.99, EMPTY recall ≥ 0.97 before deploy.
 | Camera not opening | `config/app.yaml camera.backend`; device perms (video group) |
 | Barcode scans not arriving | scanner backend/device; HMI manual entry always works |
 | Bundle import "checksum mismatch" | rebuild the bundle on the server (corrupt transfer) |
-```
