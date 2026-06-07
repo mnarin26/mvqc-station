@@ -1,0 +1,11 @@
+[Unit]
+Description=MVQC daily archive (export ZIP + retention)
+After=mvqc-app.service
+
+[Service]
+Type=oneshot
+User=cm5-101
+Group=cm5-101
+WorkingDirectory=/home/cm5-101/mvqc/app
+Environment=MVQC_CONFIG=/home/cm5-101/mvqc/config/app.yaml
+ExecStart=/home/cm5-101/mvqc/.venv/bin/python -m station.cli archive

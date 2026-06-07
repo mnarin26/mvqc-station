@@ -1,0 +1,22 @@
+# MVQC Station (CM5 / Raspberry Pi 5, aarch64) runtime dependencies.
+# Pin minimums; the provisioning script installs the latest compatible wheels.
+
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pydantic-settings>=2.2
+PyYAML>=6.0
+SQLAlchemy>=2.0
+numpy>=1.26
+opencv-python-headless>=4.9
+onnxruntime>=1.17
+Pillow>=10.2
+python-multipart>=0.0.9
+websockets>=12.0
+
+# Optional hardware backends (install on the real station as needed):
+#   picamera2        # CSI / libcamera cameras (apt: python3-picamera2)
+#   evdev            # USB-HID barcode scanners
+#   pyserial         # serial barcode scanners / lighting controllers
+#   gpiozero         # GPIO lighting control
+#   aravis / vendor SDK  # GigE / USB3 GenICam cameras

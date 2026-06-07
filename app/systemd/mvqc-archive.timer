@@ -1,0 +1,10 @@
+[Unit]
+Description=MVQC daily archive timer (23:55)
+
+[Timer]
+OnCalendar=*-*-* 23:55:00
+Persistent=true
+Unit=mvqc-archive.service
+
+[Install]
+WantedBy=timers.target

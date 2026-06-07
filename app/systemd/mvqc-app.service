@@ -1,0 +1,21 @@
+[Unit]
+Description=MVQC Station (FastAPI + inspection engine)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cm5-101
+Group=cm5-101
+WorkingDirectory=/home/cm5-101/mvqc/app
+Environment=MVQC_CONFIG=/home/cm5-101/mvqc/config/app.yaml
+Environment=PYTHONUNBUFFERED=1
+# venv created by scripts/provision.sh
+ExecStart=/home/cm5-101/mvqc/.venv/bin/python -m station.cli serve
+Restart=on-failure
+RestartSec=3
+# Allow access to camera / input / serial devices.
+SupplementaryGroups=video plugdev input dialout
+
+[Install]
+WantedBy=multi-user.target

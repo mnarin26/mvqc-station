@@ -1,0 +1,69 @@
+# MVQC Station configuration (SSD-1 / eMMC).
+# Edit paths and hardware backends to match the physical station.
+
+station_id: cm5-101
+
+paths:
+  # All durable app state on the system drive (eMMC). Images never live here.
+  database: /home/cm5-101/mvqc/database/station.db
+  logs: /home/cm5-101/mvqc/logs
+  cache: /home/cm5-101/mvqc/cache
+  models: /home/cm5-101/mvqc/cache/models   # active ONNX models staged from bundles
+  frontend: /home/cm5-101/mvqc/app/station/web
+
+storage:
+  mount: /mnt/mvqc              # external storage root (full images, exports, ROI, teaching)
+  full_images_subdir: full_images
+  exports_subdir: exports
+  roi_archive_subdir: roi_archive
+  missing_policy: block          # block | buffer  (protect eMMC by default)
+  min_free_mb: 500               # alarm/refuse below this free space
+  buffer_dir: /home/cm5-101/mvqc/cache/pending
+  buffer_max_mb: 2000            # capped eMMC buffer when policy=buffer
+
+camera:
+  backend: mock                  # mock | picamera2 | v4l2 | genicam
+  device: /dev/video0
+  width: 1920
+  height: 1080
+  fps: 15
+  # exposure/gain sweep used during teaching auto-capture
+  exposure_default: 0.0          # backend-specific; 0 = auto
+  gain_default: 1.0
+
+barcode:
+  backend: manual                # manual | evdev | serial
+  device: /dev/input/event0      # evdev device for HID scanners
+  serial_port: /dev/ttyUSB0
+  serial_baud: 9600
+
+lighting:
+  backend: none                  # none | gpio | serial
+
+teaching:
+  frames_per_label: 20
+  condition_sweep: false         # true = vary exposure/gain/light (use when rig is ready)
+  exposure_sweep: [-0.3, 0.0, 0.3]
+  gain_sweep: [1.0, 1.2]
+
+inference:
+  default_threshold: 0.5
+  positive_class: FILLED
+
+data_collection:
+  low_conf_threshold: 0.85       # PASS below this confidence is archived
+  pass_sample_rate: 0.02         # random fraction of PASS to archive (0..1)
+  save_full_image_on_pass: false
+
+archiving:
+  retention_days_full_images: 30 # prune local full images after ZIP + N days
+  retention_days_exports: 90
+
+server:
+  host: 0.0.0.0
+  port: 8000
+
+logging:
+  level: INFO
+  max_bytes: 5242880             # 5 MB per log file
+  backup_count: 5

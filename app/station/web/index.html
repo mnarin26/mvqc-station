@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>MVQC Station</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#1a2230; --panel2:#222d3d; --ink:#e6edf3; --muted:#8b98a9;
+    --line:#2c3a4e; --accent:#3b82f6; --ok:#16a34a; --nok:#dc2626; --warn:#d97706;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; align-items:center; gap:16px; padding:10px 18px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10;}
+  header h1 { font-size:16px; margin:0; letter-spacing:.5px; }
+  .station { color:var(--muted); font-size:13px; }
+  .pill { font-size:12px; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--muted); }
+  .pill.ok { color:var(--ok); border-color:var(--ok); }
+  .pill.bad { color:var(--nok); border-color:var(--nok); }
+  nav { display:flex; gap:4px; padding:8px 18px; background:var(--panel); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  nav button { background:transparent; color:var(--muted); border:1px solid transparent; padding:8px 14px; border-radius:8px; cursor:pointer; font-size:14px; }
+  nav button.active { color:var(--ink); background:var(--panel2); border-color:var(--line); }
+  main { padding:18px; max-width:1200px; margin:0 auto; }
+  .grid { display:grid; gap:16px; }
+  .cols-2 { grid-template-columns:1fr 1fr; }
+  .cols-3 { grid-template-columns:repeat(3,1fr); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { margin:0 0 12px; font-size:15px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input, select { width:100%; background:var(--bg); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:9px 10px; font-size:14px; }
+  button.btn { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; }
+  button.btn.secondary { background:var(--panel2); border:1px solid var(--line); }
+  button.btn.ok { background:var(--ok);} button.btn.nok{ background:var(--nok);}
+  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .spacer { flex:1; }
+  .muted { color:var(--muted); font-size:13px; }
+  .banner { font-size:42px; font-weight:800; text-align:center; padding:18px; border-radius:12px; letter-spacing:2px; }
+  .banner.pass { background:rgba(22,163,74,.15); color:var(--ok); border:2px solid var(--ok);}
+  .banner.fail { background:rgba(220,38,38,.15); color:var(--nok); border:2px solid var(--nok);}
+  .dot { display:inline-block; width:9px; height:9px; border-radius:99px; }
+  .dot.ok{background:var(--ok);} .dot.nok{background:var(--nok);}
+  canvas { border:1px solid var(--line); border-radius:8px; max-width:100%; height:auto; touch-action:none; cursor:crosshair; }
+  img.preview { width:100%; border:1px solid var(--line); border-radius:8px; background:#000; }
+  .log { font-family:ui-monospace,monospace; font-size:12px; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px; height:140px; overflow:auto; }
+  .tag { font-size:11px; padding:1px 6px; border-radius:5px; background:var(--panel2); color:var(--muted); }
+  .stat { font-size:30px; font-weight:700; }
+  .toast { position:fixed; bottom:16px; right:16px; background:var(--panel2); border:1px solid var(--line); padding:10px 14px; border-radius:8px; max-width:340px; }
+  .roiRow { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+  .roiRow .idx { width:22px; color:var(--muted); }
+  .defectRow { display:flex; gap:6px; align-items:center; margin:4px 0 4px 30px; font-size:12px; }
+  .status-badge { font-size:11px; padding:2px 8px; border-radius:99px; font-weight:600; }
+  .status-badge.active { background:rgba(22,163,74,.2); color:var(--ok); border:1px solid var(--ok); }
+  .status-badge.inactive { background:rgba(220,38,38,.15); color:var(--nok); border:1px solid var(--nok); }
+  .result-panel { margin-top:12px; padding:12px; border-radius:8px; border:1px solid var(--line); }
+  .result-panel.ok { border-color:var(--ok); background:rgba(22,163,74,.08); }
+  .result-panel.err { border-color:var(--nok); background:rgba(220,38,38,.08); color:var(--nok); }
+  .dec-ok { color:var(--ok); font-weight:600; }
+  .dec-warn { color:var(--warn); font-weight:600; }
+  .dec-nok { color:var(--nok); font-weight:600; }
+  .hide { display:none; }
+  .help h3 { font-size:15px; margin:20px 0 8px; color:var(--ink); border-bottom:1px solid var(--line); padding-bottom:6px; }
+  .help h4 { font-size:13px; margin:14px 0 6px; color:var(--accent); }
+  .help p, .help li { font-size:13px; line-height:1.55; color:var(--muted); }
+  .help ul { margin:6px 0 12px 18px; padding:0; }
+  .help code { background:var(--bg); padding:2px 6px; border-radius:4px; font-size:12px; }
+  .help pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:12px; line-height:1.45; }
+  .help .toc a { color:var(--accent); text-decoration:none; font-size:13px; }
+  .help .flow { background:var(--bg); border-left:3px solid var(--accent); padding:10px 14px; margin:10px 0; font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>MVQC<span class="muted"> Station</span></h1>
+  <span class="station" id="stationId">-</span>
+  <span class="spacer"></span>
+  <span class="pill" id="camPill">camera</span>
+  <span class="pill" id="storagePill">storage</span>
+  <span class="pill" id="wsPill">live</span>
+</header>
+<nav id="nav"></nav>
+<main id="view"></main>
+<div id="toast" class="toast hide"></div>
+
+<script>
+const API = "/api";
+const state = { tab:"dashboard", products:[], selectedProduct:null, recipe:null,
+  selectedSurface:null, snapshot:null, rois:[], drawing:null };
+
+async function api(path, opts={}) {
+  const res = await fetch(API+path, opts);
+  if (!res.ok) {
+    let msg = res.statusText; try { msg = (await res.json()).detail || msg; } catch(e){}
+    throw new Error(msg);
+  }
+  return res.status===204 ? null : res.json();
+}
+function toast(msg, ms=2600){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.remove("hide"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add("hide"),ms); }
+function el(html){ const d=document.createElement("div"); d.innerHTML=html.trim(); return d.firstElementChild; }
+
+const TABS = [["dashboard","Dashboard"],["products","Products"],["teaching","Teaching"],
+  ["inspect","Inspect"],["models","Models"],["settings","Settings"],["help","Help"]];
+function renderNav(){
+  const nav=document.getElementById("nav"); nav.innerHTML="";
+  TABS.forEach(([id,label])=>{ const b=el(`<button>${label}</button>`); if(state.tab===id)b.classList.add("active");
+    b.onclick=()=>{state.tab=id; renderNav(); renderView();}; nav.appendChild(b); });
+}
+
+/* ---------------- WebSocket live events ---------------- */
+let ws;
+function connectWs(){
+  const proto = location.protocol==="https:"?"wss":"ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = ()=> setPill("wsPill","live","ok");
+  ws.onclose = ()=> { setPill("wsPill","offline","bad"); setTimeout(connectWs,2000); };
+  ws.onmessage = (ev)=>{ const m=JSON.parse(ev.data); handleEvent(m); };
+}
+function setPill(id,text,cls){ const p=document.getElementById(id); p.textContent=text; p.className="pill "+(cls||""); }
+function handleEvent(m){
+  if(m.type==="barcode_scan" && state.tab==="inspect"){ const bc=document.getElementById("bc"); if(bc){bc.value=m.payload.barcode; runInspect();} }
+  if(m.type==="storage_alarm") toast("Storage: "+m.payload.message,4000);
+  if(m.type==="teaching_progress"){ const el2=document.getElementById("teachProg"); if(el2) el2.textContent=`Capturing ${m.payload.label}: ${m.payload.frame}/${m.payload.frames}`; }
+  const log=document.getElementById("evlog"); if(log){ log.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${m.type} ${JSON.stringify(m.payload)}</div>`; log.scrollTop=log.scrollHeight; }
+}
+
+/* ---------------- Health header ---------------- */
+async function refreshHealth(){
+  try{ const h=await api("/health");
+    document.getElementById("stationId").textContent=h.station_id;
+    setPill("camPill","cam:"+(h.camera.backend||"?"), h.camera.open?"ok":"bad");
+    setPill("storagePill", h.storage.needs_selection ? "storage!" : "storage",
+      h.storage.ok ? "ok" : "bad");
+  }catch(e){}
+}
+
+/* ---------------- Views ---------------- */
+async function renderView(){
+  const v=document.getElementById("view"); v.innerHTML="<p class='muted'>Loading...</p>";
+  try { await VIEWS[state.tab](v); } catch(e){ v.innerHTML=`<div class='card'>Error: ${e.message}</div>`; }
+}
+const VIEWS={};
+
+VIEWS.dashboard = async (v)=>{
+  const d=await api("/dashboard");
+  const s=d.stats;
+  v.innerHTML="";
+  const cards=el(`<div class="grid cols-3">
+    <div class="card"><div class="muted">Total inspections</div><div class="stat">${s.total}</div></div>
+    <div class="card"><div class="muted">Pass rate</div><div class="stat">${(s.pass_rate*100).toFixed(1)}%</div></div>
+    <div class="card"><div class="muted">Failures</div><div class="stat" style="color:var(--nok)">${s.fail}</div></div>
+  </div>`);
+  v.appendChild(cards);
+  const sh=d.storage;
+  const warn = sh.needs_selection ? `<div class="card" style="margin-top:16px;border-color:var(--nok)"><b style="color:var(--nok)">Storage not ready</b><p class="muted">${sh.message||"Select a volume in Settings."}</p></div>` : "";
+  const storage=el(`${warn}<div class="card" style="margin-top:16px"><h2>Storage health</h2>
+    <table><tr><th>Device</th><th>Mount</th><th>Mounted</th><th>Free (MB)</th><th>OK</th></tr>
+    <tr><td><code>${sh.device||"-"}</code></td><td><code>${sh.mount||"-"}</code></td><td>${sh.mounted}</td><td>${sh.free_mb??"-"}</td>
+    <td><span class="dot ${sh.ok?'ok':'nok'}"></span></td></tr>
+    </table><div class="muted" style="margin-top:8px">Policy: ${sh.policy} · buffered files: ${sh.buffered_files}</div></div>`);
+  v.appendChild(storage);
+  const recent=el(`<div class="card" style="margin-top:16px"><h2>Recent inspections</h2>
+    <table><tr><th>ID</th><th>Surface</th><th>Result</th><th>Conf</th><th>Saved</th><th>Time</th></tr>
+    ${d.recent.map(r=>`<tr><td>${r.id}</td><td>${r.surface_index}</td><td style="color:${r.result==='PASS'?'var(--ok)':'var(--nok)'}">${r.result}</td><td>${(r.overall_confidence??0).toFixed(2)}</td><td>${r.saved?(r.saved_reason):'-'}</td><td class="muted">${r.timestamp}</td></tr>`).join("")}
+    </table></div>`);
+  v.appendChild(recent);
+};
+
+VIEWS.products = async (v)=>{
+  const products = await api("/products"); state.products=products;
+  v.innerHTML="";
+  const form=el(`<div class="card"><h2>Create product</h2>
+    <div class="grid cols-2">
+      <div><label>Name</label><input id="pname" placeholder="Product_A"/></div>
+      <div><label>Barcode (scan or type)</label><input id="pbarcode" placeholder="8691234567890"/></div>
+      <div><label>Surface count</label><input id="psurf" type="number" min="1" value="1"/></div>
+      <div><label>Pass rule</label><select id="prule"><option value="all_filled">all_filled</option><option value="any_filled">any_filled</option></select></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="pcreate">Create product</button></div>
+  </div>`);
+  v.appendChild(form);
+  form.querySelector("#pcreate").onclick=async()=>{
+    try{ const body={name:pname.value.trim(),barcode:pbarcode.value.trim()||null,surface_count:+psurf.value,pass_rule:prule.value};
+      await api("/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      toast("Product created"); VIEWS.products(v);
+    }catch(e){ toast(e.message,3500); }
+  };
+  const list=el(`<div class="card" style="margin-top:16px"><h2>Products</h2>
+    <table><tr><th>ID</th><th>Name</th><th>Barcode</th><th>Surfaces</th><th>Status</th><th></th></tr>
+    ${products.map(p=>`<tr><td>${p.id}</td><td>${p.name}</td><td>${p.barcode||'-'}</td><td>${p.surface_count}</td><td><span class="tag">${p.status}</span></td>
+      <td><button class="btn secondary" data-del="${p.id}" data-name="${p.name}">Delete</button></td></tr>`).join("")}
+    </table>
+    <div class="muted" style="margin-top:8px">Delete removes the product, all recipes/ROIs, models and inspection history.</div></div>`);
+  v.appendChild(list);
+  list.querySelectorAll("button[data-del]").forEach(b=> b.onclick=async()=>{
+    const name=b.dataset.name, id=+b.dataset.del;
+    const typed=prompt(`Delete product "${name}" and ALL its data?\nType the product name to confirm:`);
+    if(typed!==name) return typed===null?null:toast("Name did not match — cancelled",3000);
+    try{ await api(`/products/${id}`,{method:"DELETE"}); toast(`Deleted ${name}`); VIEWS.products(v); }
+    catch(e){ toast("Delete failed: "+e.message,4500); }
+  });
+};
+
+VIEWS.teaching = async (v)=>{
+  const products = await api("/products"); state.products=products;
+  v.innerHTML="";
+  const pick=el(`<div class="card"><h2>1 · Select product & surface</h2>
+    <div class="grid cols-2">
+      <div><label>Product</label><select id="tprod"><option value="">--</option>${products.map(p=>`<option value="${p.id}">${p.name} (${p.status})</option>`).join("")}</select></div>
+      <div><label>Surface</label><select id="tsurf"><option value="">--</option></select></div>
+    </div></div>`);
+  v.appendChild(pick);
+
+  const editor=el(`<div class="card" style="margin-top:16px"><h2>2 · Draw ROIs</h2>
+    <div class="row"><button class="btn secondary" id="tsnap">Capture snapshot</button>
+      <span class="muted">Drag on the image to add a ROI box.</span><span class="spacer"></span>
+      <button class="btn secondary" id="tclear">Clear</button><button class="btn" id="tsaveroi">Save ROIs</button></div>
+    <div class="grid cols-2" style="margin-top:12px">
+      <canvas id="tcanvas" width="600" height="300"></canvas>
+      <div><div id="roilist"></div></div>
+    </div></div>`);
+  v.appendChild(editor);
+
+  const teach=el(`<div class="card" style="margin-top:16px"><h2>3 · Teach classes</h2>
+    <div class="muted" style="margin-bottom:8px">EMPTY/FILLED → all ROIs. Defect capture → <b>only the ROI(s) where you defined that defect</b> (saved under <code>teaching/…/TERS/roi_1/</code> etc.).</div>
+    <div class="row" id="capButtons">
+      <button class="btn nok" id="capEmpty">Capture EMPTY (~20)</button>
+      <button class="btn ok" id="capFilled">Capture FILLED (~20)</button>
+      <span class="spacer"></span><span id="teachProg" class="muted"></span></div>
+    <div id="teachStatus" class="muted" style="margin-top:10px"></div>
+    <div class="muted" style="margin-top:8px">After capturing, export SSD-3 to the training server, train, then import the model bundle in the Models tab.</div>
+  </div>`);
+  v.appendChild(teach);
+
+  const evcard=el(`<div class="card" style="margin-top:16px"><h2>Live events</h2><div class="log" id="evlog"></div></div>`);
+  v.appendChild(evcard);
+
+  const tprod=pick.querySelector("#tprod"), tsurf=pick.querySelector("#tsurf");
+  tprod.onchange=async()=>{
+    state.selectedProduct=+tprod.value||null; tsurf.innerHTML='<option value="">--</option>'; state.recipe=null;
+    if(!state.selectedProduct) return;
+    try{ const rec=await api(`/products/${state.selectedProduct}/active-recipe`); state.recipe=rec; }
+    catch(e){ // fall back to latest draft recipe
+      const recs=await api(`/products/${state.selectedProduct}/recipes`); if(recs.length){ state.recipe=await api(`/recipes/${recs[0].id}`);} }
+    if(state.recipe){ state.recipe.surfaces.forEach(s=> tsurf.appendChild(el(`<option value="${s.id}">Surface ${s.surface_index} ${s.name?('· '+s.name):''}</option>`))); }
+  };
+  tsurf.onchange=()=>{ state.selectedSurface=+tsurf.value||null; const s=state.recipe?.surfaces.find(x=>x.id===state.selectedSurface);
+    state.rois=(s?.rois||[]).map(r=>({id:r.id,name:r.name,geometry:{...r.geometry},
+      params:r.params||{defects:[]}, defects:(r.params?.defects||[]).map(d=>({label:d.label||"",severity:d.severity||"error"}))}));
+    drawCanvas(); renderRoiList(); renderCaptureButtons(); refreshTeachStatus(); };
+
+  const canvas=editor.querySelector("#tcanvas"); const ctx=canvas.getContext("2d");
+  let scale=1, imgObj=null;
+
+  /** Map pointer coords to canvas pixels (CSS max-width scales display vs internal size). */
+  function pointerToCanvas(e){
+    const r=canvas.getBoundingClientRect();
+    const sx=canvas.width/r.width, sy=canvas.height/r.height;
+    return {x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy};
+  }
+
+  editor.querySelector("#tsnap").onclick=async()=>{
+    const snap=await api("/teaching/snapshot"); state.snapshot=snap; imgObj=new Image();
+    imgObj.onload=()=>{ const maxW=600; scale=Math.min(1,maxW/snap.width); canvas.width=snap.width*scale; canvas.height=snap.height*scale;
+      canvas.style.width=canvas.width+"px"; canvas.style.height=canvas.height+"px"; drawCanvas(); };
+    imgObj.src=snap.image;
+  };
+  function drawCanvas(){ if(!imgObj){ctx.clearRect(0,0,canvas.width,canvas.height);return;} ctx.drawImage(imgObj,0,0,canvas.width,canvas.height);
+    state.rois.forEach((r,i)=>{ const g=r.geometry; ctx.strokeStyle="#3b82f6"; ctx.lineWidth=2; ctx.strokeRect(g.x*scale,g.y*scale,g.w*scale,g.h*scale);
+      ctx.fillStyle="#3b82f6"; ctx.font="13px sans-serif"; ctx.fillText((r.name||("ROI"+(i+1))),g.x*scale+3,g.y*scale+14); });
+    if(state.drawing){ const d=state.drawing; ctx.strokeStyle="#22d3ee"; ctx.strokeRect(d.x,d.y,d.w,d.h);} }
+  let start=null;
+  canvas.onpointerdown=(e)=>{ canvas.setPointerCapture(e.pointerId); start=pointerToCanvas(e); };
+  canvas.onpointermove=(e)=>{ if(!start)return; const p=pointerToCanvas(e);
+    state.drawing={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)}; drawCanvas(); };
+  canvas.onpointerup=(e)=>{ try{canvas.releasePointerCapture(e.pointerId);}catch(_){}
+    if(state.drawing && state.drawing.w>8 && state.drawing.h>8){ const d=state.drawing;
+      state.rois.push({name:"",geometry:{x:Math.round(d.x/scale),y:Math.round(d.y/scale),w:Math.round(d.w/scale),h:Math.round(d.h/scale)},params:{defects:[]},defects:[]}); renderRoiList(); }
+    start=null; state.drawing=null; drawCanvas(); };
+  editor.querySelector("#tclear").onclick=()=>{ state.rois=[]; renderRoiList(); drawCanvas(); };
+  function renderRoiList(){
+    const box=editor.querySelector("#roilist"); box.innerHTML="<label>ROIs &amp; defect classes</label>";
+    state.rois.forEach((r,i)=>{
+      const wrap=el(`<div style="margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:8px">
+        <div class="roiRow"><span class="idx">${i+1}</span>
+          <input value="${r.name||''}" placeholder="name (e.g. Screw)"/>
+          <button class="btn secondary" data-act="del">x</button></div>
+        <div class="defects" data-idx="${i}"></div>
+        <button class="btn secondary" style="margin:4px 0 0 30px;font-size:12px;padding:4px 10px" data-act="adddef">+ Add defect class</button>
+      </div>`);
+      wrap.querySelector("input").oninput=(e)=>{r.name=e.target.value;};
+      wrap.querySelector('[data-act="del"]').onclick=()=>{state.rois.splice(i,1);renderRoiList();renderCaptureButtons();drawCanvas();};
+      wrap.querySelector('[data-act="adddef"]').onclick=()=>{
+        if(!r.defects) r.defects=[];
+        r.defects.push({label:"",severity:"error"}); renderRoiList(); renderCaptureButtons();
+      };
+      const dbox=wrap.querySelector(".defects");
+      (r.defects||[]).forEach((d,di)=>{
+        const drow=el(`<div class="defectRow">
+          <input value="${d.label||''}" placeholder="defect label (e.g. ezik)" style="flex:1"/>
+          <select style="width:110px"><option value="error" ${d.severity==="error"?"selected":""}>ERROR</option>
+            <option value="warning" ${d.severity==="warning"?"selected":""}>WARNING</option></select>
+          <button class="btn secondary" style="padding:4px 8px">x</button></div>`);
+        drow.querySelector("input").oninput=(e)=>{d.label=e.target.value; renderCaptureButtons();};
+        drow.querySelector("select").onchange=(e)=>{d.severity=e.target.value;};
+        drow.querySelector("button").onclick=()=>{r.defects.splice(di,1);renderRoiList();renderCaptureButtons();};
+        dbox.appendChild(drow);
+      });
+      box.appendChild(wrap);
+    });
+  }
+  renderRoiList();
+  editor.querySelector("#tsaveroi").onclick=async()=>{
+    if(!state.selectedSurface) return toast("Select a surface first");
+    const body={rois: state.rois.map((r,i)=>{
+      const defects=(r.defects||[]).filter(d=>d.label&&d.label.trim()).map(d=>({label:d.label.trim().toUpperCase(),severity:d.severity||"error"}));
+      return {id:(r.id??null),name:r.name||null,roi_index:i+1,geometry:r.geometry,
+        params:{defects}};
+    })};
+    try{
+      const updated=await api(`/surfaces/${state.selectedSurface}/rois`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      state.rois=(updated.rois||[]).map(r=>({id:r.id,name:r.name,geometry:{...r.geometry},
+        params:r.params||{defects:[]},defects:(r.params?.defects||[]).map(d=>({label:d.label||"",severity:d.severity||"error"}))}));
+      renderRoiList(); renderCaptureButtons(); drawCanvas(); toast("ROIs saved");
+    }catch(e){ toast("Save failed: "+e.message,4500); }
+  };
+
+  function roisWithDefect(label){
+    const u=label.toUpperCase();
+    return state.rois.map((r,i)=>(r.defects||[]).some(d=>d.label&&d.label.trim().toUpperCase()===u)?(i+1):null).filter(x=>x!==null);
+  }
+  function renderCaptureButtons(){
+    const row=teach.querySelector("#capButtons");
+    row.querySelectorAll("[data-cap]").forEach(b=>b.remove());
+    const spacer=row.querySelector(".spacer");
+    const seen=new Set();
+    state.rois.forEach((r,i)=>{
+      (r.defects||[]).forEach(d=>{
+        if(!d.label||!d.label.trim()) return;
+        const lbl=d.label.trim().toUpperCase();
+        if(seen.has(lbl)) return;
+        seen.add(lbl);
+        const rois=roisWithDefect(lbl);
+        const btn=el(`<button class="btn secondary" data-cap="${lbl}" style="background:var(--warn);color:#fff" title="Only ROI(s) ${rois.join(", ")}">Capture ${lbl} (ROI ${rois.join(",")})</button>`);
+        btn.onclick=()=>capture(lbl);
+        row.insertBefore(btn, spacer);
+      });
+    });
+  }
+  async function capture(label){ if(!state.selectedSurface) return toast("Select a surface");
+    try{ const r=await api("/teaching/capture",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({surface_id:state.selectedSurface,label})});
+      const targets=r.target_rois?.length?` → ROI ${r.target_rois.join(", ")}`:"";
+      const counts=Object.entries(r.samples_per_roi||{}).filter(([,n])=>n>0).map(([k,n])=>`${k}:${n}`).join(" ");
+      toast(`${label}: ${r.frames_captured} frames${targets}${counts?` (${counts})`:""}`); refreshTeachStatus();
+    }catch(e){ toast(e.message,3500);} }
+  teach.querySelector("#capEmpty").onclick=()=>capture("EMPTY");
+  teach.querySelector("#capFilled").onclick=()=>capture("FILLED");
+  renderCaptureButtons();
+  async function refreshTeachStatus(){ if(!state.selectedSurface)return; const st=await api(`/teaching/status/${state.selectedSurface}`);
+    const parts=Object.keys(st).filter(k=>k!=="surface_id"&&st[k]>0).map(k=>`${k}: ${st[k]}`);
+    teach.querySelector("#teachStatus").textContent=parts.length?`Samples — ${parts.join(" · ")}`:"No samples yet"; }
+};
+
+VIEWS.inspect = async (v)=>{
+  const products=await api("/products");
+  v.innerHTML="";
+  const top=el(`<div class="card"><h2>Inspect</h2>
+    <div class="row">
+      <div style="flex:1"><label>Barcode (scan to auto-run)</label><input id="bc" placeholder="scan or type barcode"/></div>
+      <div style="width:240px"><label>or Product</label><select id="iprod"><option value="">--</option>${products.map(p=>`<option value="${p.id}">${p.name} (${p.status})</option>`).join("")}</select></div>
+      <div style="align-self:flex-end"><button class="btn" id="runBtn">Run inspection</button></div>
+    </div></div>`);
+  v.appendChild(top);
+  const live=el(`<div class="card" style="margin-top:16px"><h2>Live preview</h2><img class="preview" id="mjpeg" src="/stream/preview"/></div>`);
+  v.appendChild(live);
+  const result=el(`<div id="resultBox" style="margin-top:16px"></div>`); v.appendChild(result);
+  top.querySelector("#runBtn").onclick=runInspect;
+  document.getElementById("bc").addEventListener("keydown",(e)=>{ if(e.key==="Enter") runInspect(); });
+};
+
+async function runInspect(){
+  const bc=document.getElementById("bc"); const iprod=document.getElementById("iprod");
+  const body={}; if(bc && bc.value.trim()) body.barcode=bc.value.trim(); else if(iprod && iprod.value) body.product_id=+iprod.value;
+  if(!body.barcode && !body.product_id) return toast("Scan a barcode or pick a product");
+  const box=document.getElementById("resultBox"); box.innerHTML="<div class='card'>Inspecting…</div>";
+  try{
+    const r=await api("/inspect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    box.innerHTML="";
+    box.appendChild(el(`<div class="banner ${r.result==='PASS'?'pass':'fail'}">${r.result}</div>`));
+    r.surfaces.forEach(s=>{
+      const card=el(`<div class="card" style="margin-top:12px"><h2>Surface ${s.surface_index} — ${s.result} (${(s.overall_confidence*100).toFixed(0)}%)</h2>
+        <div class="grid cols-2">
+          <img class="preview" src="${s.annotated_image}"/>
+          <div><table><tr><th>ROI</th><th>Label</th><th>Conf</th><th>Decision</th></tr>
+          ${s.roi_results.map(rr=>{
+            const cls=rr.decision==='OK'?'dec-ok':(rr.decision==='WARN'?'dec-warn':'dec-nok');
+            const txt=rr.decision==='OK'?'OK':(rr.decision==='WARN'?'UYARI':'HATA');
+            return `<tr><td>${rr.name||('ROI'+rr.roi_index)}</td><td>${rr.label}</td><td>${(rr.confidence*100).toFixed(0)}%</td><td class="${cls}">${txt}</td></tr>`;
+          }).join("")}
+          </table><div class="muted" style="margin-top:8px">${s.saved?('Archived: '+s.saved_reason):'Not archived'}</div></div>
+        </div></div>`);
+      box.appendChild(card);
+    });
+  }catch(e){ box.innerHTML=`<div class="card" style="border-color:var(--nok)">Inspection failed: ${e.message}</div>`; }
+}
+
+VIEWS.models = async (v)=>{
+  const products=await api("/products"); const models=await api("/models");
+  v.innerHTML="";
+  const imp=el(`<div class="card"><h2>Import model bundle (USB)</h2>
+    <div class="row"><input type="file" id="bundle" accept=".zip"/><button class="btn" id="impBtn">Import &amp; activate</button></div>
+    <div id="impResult" class="hide"></div>
+    <div class="muted" style="margin-top:8px">Bundle = manifest.json + one ONNX per ROI from the training server. Import replaces the active model per ROI; previous version is kept for rollback.</div></div>`);
+  v.appendChild(imp);
+  async function showCoverage(productName){
+    const prod=products.find(p=>p.name===productName);
+    if(!prod) return "";
+    try{
+      const c=await api(`/models/coverage/${prod.id}`);
+      const missing=c.rois.filter(r=>!r.has_model).map(r=>`S${r.surface_index}/ROI${r.roi_index} ${r.name||""}`).join(", ");
+      return `<div style="margin-top:8px">Coverage: <b style="color:${c.ready?'var(--ok)':'var(--nok)'}">${c.covered}/${c.total}</b> ROIs have an active model${missing?` · missing: ${missing}`:""}`;
+    }catch(e){ return `<div style="margin-top:8px;color:var(--nok)">Coverage check failed: ${e.message}</div>`; }
+  }
+  imp.querySelector("#impBtn").onclick=async()=>{
+    const f=document.getElementById("bundle").files[0]; const panel=imp.querySelector("#impResult");
+    if(!f){ panel.className="result-panel err"; panel.classList.remove("hide"); panel.innerHTML="Choose a bundle .zip first."; return; }
+    panel.className="result-panel"; panel.classList.remove("hide"); panel.innerHTML="Importing…";
+    const fd=new FormData(); fd.append("file",f);
+    try{
+      const r=await api("/models/import",{method:"POST",body:fd});
+      const cov=await showCoverage(r.product);
+      const skip=r.skipped?.length?`<div style="margin-top:8px;color:var(--warn)"><b>Skipped ${r.skipped.length} model(s)</b> — no matching ROI on CM5: ${r.skipped.map(x=>`S${x.surface_index}/ROI${x.roi_index}`).join(", ")}. Add those ROIs in Teaching or remove them from training data and retrain.</div>`:"";
+      panel.className="result-panel ok";
+      panel.innerHTML=`<b>Import successful</b><br>Product: <b>${r.product}</b> · ${r.count} model(s) activated · source: ${r.source||"manual_usb"}${skip}${cov}`;
+      toast(`Activated ${r.count} models for ${r.product}`);
+      VIEWS.models(v);
+    }catch(e){
+      panel.className="result-panel err";
+      panel.innerHTML=`<b>Import failed</b><br>${e.message}`;
+      toast(e.message,5000);
+    }
+  };
+  const list=el(`<div class="card" style="margin-top:16px"><h2>Active models per ROI</h2>
+    <div class="muted" style="margin-bottom:8px">Each row is the <b>currently active</b> model for that ROI. Version = training run ID from the bundle. Rollback restores the previous import.</div>
+    <table><tr><th>Product</th><th>Surface</th><th>ROI</th><th title="Training run version from bundle">Version</th><th>Deployed</th><th>Checksum</th><th>Status</th><th></th></tr>
+    ${models.length?models.map(m=>{
+      const badge=m.loaded?'<span class="status-badge active">Aktif · yüklü</span>':'<span class="status-badge inactive">Kayıtlı · bellekte değil</span>';
+      const dep=m.deployed_at?m.deployed_at.replace("T"," ").slice(0,19):"-";
+      return `<tr><td>${m.product||'-'} <span class="tag">${m.product_status||''}</span></td><td>${m.surface_index??'-'}</td>
+        <td>${m.roi_name||m.roi_id}</td><td><code>${m.version||'-'}</code></td><td class="muted">${dep}</td>
+        <td class="muted"><code>${m.checksum||'-'}</code></td><td>${badge}</td>
+        <td>${m.has_rollback?`<button class="btn secondary" data-roi="${m.roi_id}" data-ver="${m.version}">Rollback</button>`:'<span class="muted">—</span>'}</td></tr>`;
+    }).join(""):'<tr><td colspan="8" class="muted">No models deployed yet. Import a bundle above.</td></tr>'}
+    </table></div>`);
+  v.appendChild(list);
+  list.querySelectorAll("button[data-roi]").forEach(b=> b.onclick=async()=>{
+    const ver=b.dataset.ver||"?";
+    if(!confirm(`Rollback ROI model to the previous version?\n\nCurrent version: ${ver}\nThis undoes the last import for this ROI only.`)) return;
+    try{ await api(`/models/rollback/${b.dataset.roi}`,{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"}); toast("Rolled back to previous version"); VIEWS.models(v);}
+    catch(e){ toast("Rollback failed: "+e.message,4500); }
+  });
+  const cov=el(`<div class="card" style="margin-top:16px"><h2>Coverage by product</h2><div id="covbox" class="muted">Pick a product to see which ROIs have an active model.</div>
+    <select id="covprod" style="max-width:280px;margin-top:8px"><option value="">--</option>${products.map(p=>`<option value="${p.id}">${p.name}</option>`).join("")}</select></div>`);
+  v.appendChild(cov);
+  cov.querySelector("#covprod").onchange=async(e)=>{ if(!e.target.value)return; try{ const c=await api(`/models/coverage/${e.target.value}`);
+    const rows=c.rois.map(r=>`<tr><td>S${r.surface_index}</td><td>ROI${r.roi_index} ${r.name||''}</td><td>${r.has_model?'<span class="dec-ok">model var</span>':'<span class="dec-nok">eksik</span>'}</td></tr>`).join("");
+    cov.querySelector("#covbox").innerHTML=`<div>Ready: <b style="color:${c.ready?'var(--ok)':'var(--nok)'}">${c.ready?'Evet':'Hayır'}</b> — ${c.covered}/${c.total} ROI covered</div>
+      <table style="margin-top:8px"><tr><th>Surface</th><th>ROI</th><th>Model</th></tr>${rows}</table>`;
+  }catch(err){ cov.querySelector("#covbox").textContent=err.message; } };
+};
+
+VIEWS.help = async (v)=>{
+  v.innerHTML="";
+  const h=el(`<div class="help">
+  <div class="card"><h2>MVQC Station — Kullanım Kılavuzu</h2>
+  <p>Bu istasyon (CM5) ürün tanımlar, ROI çizer, öğrenim verisi toplar, canlı denetim yapar ve eğitilmiş ONNX modellerini çalıştırır. Eğitim <b>training-server</b> üzerinde yapılır; burada sadece model import edilir.</p>
+  <div class="toc" style="margin-top:12px">
+    <b>İçindekiler:</b>
+    <ul>
+      <li><a href="#" data-goto="h-flow">Genel akış</a></li>
+      <li><a href="#" data-goto="h-dash">Dashboard</a></li>
+      <li><a href="#" data-goto="h-prod">Products</a></li>
+      <li><a href="#" data-goto="h-teach">Teaching (ROI + defect)</a></li>
+      <li><a href="#" data-goto="h-insp">Inspect</a></li>
+      <li><a href="#" data-goto="h-mod">Models (import / rollback)</a></li>
+      <li><a href="#" data-goto="h-set">Settings</a></li>
+      <li><a href="#" data-goto="h-fold">Klasör yapısı</a></li>
+      <li><a href="#" data-goto="h-trouble">Sorun giderme</a></li>
+    </ul>
+  </div></div>
+
+  <div class="card" style="margin-top:16px" id="h-flow">
+    <h3>Genel akış (sıfırdan üretime)</h3>
+    <div class="flow">
+      1. <b>Products</b> → ürün oluştur (ad, barkod, yüzey sayısı)<br>
+      2. <b>Teaching</b> → ROI çiz, defect tanımla, EMPTY/FILLED/defect örnekleri çek<br>
+      3. SSD-3'ten <code>teaching/</code> klasörünü export et → training-server'a kopyala<br>
+      4. Training-server'da eğit → bundle ZIP indir<br>
+      5. <b>Models</b> → ZIP import et → aktif model yüklenir<br>
+      6. <b>Inspect</b> → barkod veya ürün seçerek canlı denetim
+    </div>
+    <p>Üst çubuk: <span class="pill ok">cam</span> kamera, <span class="pill ok">storage</span> disk, <span class="pill ok">live</span> canlı olay bağlantısı (WebSocket).</p>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-dash">
+    <h3>Dashboard</h3>
+    <p>İstasyon özeti: toplam denetim, geçiş oranı, hata sayısı. Storage health harici diskin mount/dolu alan durumunu gösterir. Recent inspections son denetim kayıtlarını listeler.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-prod">
+    <h3>Products</h3>
+    <h4>Ürün oluşturma</h4>
+    <ul>
+      <li><b>Name</b> — benzersiz ürün adı (ör. <code>deneme_a</code>)</li>
+      <li><b>Barcode</b> — isteğe bağlı; Inspect'te barkod okutunca otomatik seçilir</li>
+      <li><b>Surface count</b> — kaç yüzey/kamera açısı (genelde 1)</li>
+      <li><b>Pass rule</b> — <code>all_filled</code>: tüm ROI'ler OK/WARN ise PASS; <code>any_filled</code>: en az bir OK</li>
+    </ul>
+    <p>Oluşturulunca otomatik <b>recipe v1</b> ve boş yüzeyler açılır. Durum: <code>draft</code> → <code>teaching</code> → <code>ready</code>.</p>
+    <h4>Ürün silme</h4>
+    <p><b>Delete</b> butonu ürün adını yazarak onay ister. Tüm recipe, ROI, model, öğrenim verisi ve denetim geçmişi silinir. Geri alınamaz.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-teach">
+    <h3>Teaching — ROI, defect ve örnek toplama</h3>
+    <h4>1. Ürün ve yüzey seç</h4>
+    <p>Aktif recipe yoksa en son taslak recipe kullanılır.</p>
+    <h4>2. ROI çiz</h4>
+    <ul>
+      <li><b>Capture snapshot</b> — referans kare al</li>
+      <li>Görüntü üzerinde sürükleyerek kutu çiz</li>
+      <li>Her ROI'ye isim ver (ör. vida, kart)</li>
+      <li><b>Save ROIs</b> — kaydetmeden capture çalışmaz</li>
+    </ul>
+    <h4>3. Defect (hata) sınıfları — ROI başına bağımsız</h4>
+    <p>Her ROI altında <b>+ Add defect class</b> ile hata tanımlanır:</p>
+    <ul>
+      <li><b>Label</b> — sınıf adı (ör. <code>TERS</code>, <code>EZIK</code>); büyük harfe çevrilir</li>
+      <li><b>ERROR</b> — tespit edilirse FAIL (kırmızı HATA)</li>
+      <li><b>WARNING</b> — tespit edilirse geçer ama sarı UYARI</li>
+    </ul>
+    <p>Defect'ler yalnızca tanımlandığı ROI için geçerlidir; ROI'ler birbirinden bağımsızdır.</p>
+    <h4>4. Örnek çekme (capture)</h4>
+    <table><tr><th>Buton</th><th>Hangi ROI'ler</th><th>Ne zaman kullanılır</th></tr>
+    <tr><td>Capture EMPTY</td><td>Tüm ROI'ler</td><td>Parça/bölge boş</td></tr>
+    <tr><td>Capture FILLED</td><td>Tüm ROI'ler</td><td>Sağlam, doğru montaj</td></tr>
+    <tr><td>Capture TERS (ROI 2)</td><td>Sadece o defect'in tanımlı olduğu ROI</td><td>Hatalı durum örneği</td></tr>
+    </table>
+    <p>Disk yolu: <code>teaching/&lt;ürün&gt;/surface_&lt;i&gt;/&lt;SINIF&gt;/roi_&lt;n&gt;/</code><br>
+    Örnek: <code>.../TERS/roi_2/</code> yalnızca ROI2'de TERS tanımlıysa dolar.</p>
+    <p>Örnek sayısı varsayılan ~20 kare/etiket. Sonra SSD-3 export → training-server.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-insp">
+    <h3>Inspect — Canlı denetim</h3>
+    <ul>
+      <li><b>Barcode</b> — tarayıcı veya elle; Enter veya otomatik tetikler</li>
+      <li><b>Product</b> — barkod yoksa listeden seç</li>
+      <li><b>Run inspection</b> — tüm yüzeyleri sırayla denetler</li>
+    </ul>
+    <h4>ROI kararları</h4>
+    <table><tr><th>Görünüm</th><th>Anlam</th></tr>
+    <tr><td class="dec-ok">OK</td><td>FILLED — parça sağlam ve yerinde</td></tr>
+    <tr><td class="dec-warn">UYARI</td><td>Defect + WARNING severity — geçer, uyarı işaretli</td></tr>
+    <tr><td class="dec-nok">HATA</td><td>EMPTY veya defect + ERROR — FAIL</td></tr>
+    </table>
+    <p>Canlı önizleme <code>/stream/preview</code> üzerinden akar. Sonuç görüntüsünde ROI kutuları yeşil/sarı/kırmızı renklidir.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-mod">
+    <h3>Models — Import, version, rollback</h3>
+    <h4>Bundle import</h4>
+    <p>Training-server'dan gelen <code>.zip</code> seç → <b>Import &amp; activate</b>. ZIP içinde <code>manifest.json</code> + her ROI için bir <code>.onnx</code> dosyası olmalı.</p>
+    <ul>
+      <li>Başarılı import sonrası yeşil panel: kaç model, hangi ürün, kapsama (covered/total)</li>
+      <li>Bundle'da fazla ROI varsa (ör. roi_6) ama CM5'te yoksa → <b>skipped</b> uyarısı; eşleşenler yine yüklenir</li>
+      <li>Recipe'te ROI var ama bundle'da yoksa → o ROI modeli eksik kalır (Coverage'da görünür)</li>
+    </ul>
+    <h4>Version (sürüm)</h4>
+    <p>Tablodaki <b>Version</b> = eğitim çalıştırmasının ID'si (ör. <code>2026.06.07-234747</code>). Import edilen sürüm o ROI için <b>aktif</b> model olur. Önceki sürüm silinmez; rollback için saklanır.</p>
+    <h4>Status rozeti</h4>
+    <ul>
+      <li><span class="status-badge active">Aktif · yüklü</span> — bellekte çalışıyor, denetimde kullanılır</li>
+      <li><span class="status-badge inactive">Kayıtlı · bellekte değil</span> — DB'de var ama ONNX RAM'e yüklenmemiş (sunucuyu yeniden başlat)</li>
+    </ul>
+    <h4>Rollback</h4>
+    <p>Bir ROI için son import'u geri alır; bir önceki model sürümünü tekrar aktif eder. Yalnızca daha önce en az iki kez import yapılmış ROI'lerde görünür. Onay penceresi çıkar.</p>
+    <h4>Coverage</h4>
+    <p>Ürün seçince hangi ROI'lerin aktif modeli olduğunu tablo halinde gösterir. Tümü doluysa ürün durumu <code>ready</code> olur.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-set">
+    <h3>Settings</h3>
+    <p>Kamera, barkod okuyucu, aydınlatma, depolama ve veri toplama ayarları. <b>Save &amp; apply</b> kaydeder ve donanımı yeniden yükler.</p>
+    <ul>
+      <li><b>Storage</b> — harici SSD/USB seç; teaching, export ve arşiv buraya yazılır</li>
+      <li><b>low_conf_threshold</b> — düşük güven PASS kayıtlarını arşivler</li>
+      <li><b>pass_sample_rate</b> — rastgele PASS örnekleme oranı</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-fold">
+    <h3>Klasör yapısı (SSD / storage)</h3>
+    <pre>teaching/&lt;ürün&gt;/surface_1/
+  EMPTY/roi_1/*.jpg      ← tüm ROI'ler
+  FILLED/roi_1/*.jpg
+  TERS/roi_2/*.jpg       ← yalnızca ROI2 (TERS orada tanımlı)
+  EZIK/roi_1/*.jpg
+
+cache/models/&lt;ürün&gt;/roi_&lt;id&gt;/&lt;version&gt;.onnx  ← import edilen modeller</pre>
+    <p>Training-server'a aktarırken ürün kök klasörü olarak <code>teaching/&lt;ürün&gt;</code> veya export ZIP kullanılır.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px" id="h-trouble">
+    <h3>Sorun giderme</h3>
+    <table><tr><th>Belirti</th><th>Çözüm</th></tr>
+    <tr><td>Save ROIs çalışmıyor</td><td>Yüzey seçili mi? Ctrl+F5 ile sayfayı yenile. Aktif üründe ROI düzenleme artık desteklenir.</td></tr>
+    <tr><td>Import failed — no active recipe</td><td>Products'ta recipe aktif et veya ürün oluştur.</td></tr>
+    <tr><td>manifest does not match — (1,6)</td><td>Bundle'da roi_6 var, CM5'te yok. ROI ekle veya training'den roi_6 silip yeniden eğit. Kısmi import eşleşenleri yükler.</td></tr>
+    <tr><td>Defect capture tüm ROI'leri çekiyor</td><td>Güncel arayüzde yalnızca defect tanımlı ROI'ler çekilir; Save ROIs sonrası buton (ROI n) yazar.</td></tr>
+    <tr><td>Defect tanınmıyor</td><td>Model çok sınıflı eğitilmiş mi? Bundle manifest'te classes listesinde defect var mı? Yeniden eğit+import.</td></tr>
+    <tr><td>cm5-101.local açılmıyor</td><td>Sunucu çalışıyor mu: <code>python -m station.cli serve</code> port 8000</td></tr>
+    </table>
+  </div>
+  </div>`);
+  v.appendChild(h);
+  h.querySelectorAll("[data-goto]").forEach(a=> a.onclick=(e)=>{
+    e.preventDefault(); const t=document.getElementById(a.dataset.goto);
+    if(t) t.scrollIntoView({behavior:"smooth",block:"start"});
+  });
+};
+
+VIEWS.settings = async (v)=>{
+  const [data, devices] = await Promise.all([
+    api("/settings"),
+    api("/settings/devices").catch(()=>({video:[],input:[],serial:[],mounts:[],storage_devices:[]})),
+  ]);
+  const values = {...data.values};
+  v.innerHTML="";
+
+  function fieldControl(f){
+    const val = values[f.key] ?? f.value ?? "";
+    if(f.type==="select"){
+      const opts = (f.options||[]).map(o=>`<option value="${o}" ${String(val)===o?"selected":""}>${o}</option>`).join("");
+      return `<select data-key="${f.key}">${opts}</select>`;
+    }
+    if(f.type==="boolean"){
+      return `<select data-key="${f.key}"><option value="true" ${val===true||val==="true"?"selected":""}>true</option><option value="false" ${val===false||val==="false"?"selected":""}>false</option></select>`;
+    }
+    if(f.type==="device_video"){
+      const opts = devices.video.map(d=>`<option value="${d.path}" ${String(val)===d.path?"selected":""}>${d.label}</option>`).join("");
+      return `<select data-key="${f.key}">${opts}<option value="${val}" ${!devices.video.some(d=>d.path===String(val))?"selected":""}>${val} (custom)</option></select>
+        <input data-key="${f.key}" data-custom="1" value="${val}" placeholder="/dev/video0" style="margin-top:6px"/>`;
+    }
+    if(f.type==="device_input"){
+      const opts = devices.input.map(d=>`<option value="${d.path}" ${String(val)===d.path?"selected":""}>${d.label}</option>`).join("");
+      return `<select data-key="${f.key}">${opts}</select>
+        <input data-key="${f.key}" data-custom="1" value="${val}" placeholder="/dev/input/event0" style="margin-top:6px"/>`;
+    }
+    if(f.type==="device_serial"){
+      const opts = devices.serial.map(d=>`<option value="${d.path}" ${String(val)===d.path?"selected":""}>${d.label}</option>`).join("");
+      return `<select data-key="${f.key}">${opts}</select>
+        <input data-key="${f.key}" data-custom="1" value="${val}" placeholder="/dev/ttyUSB0" style="margin-top:6px"/>`;
+    }
+    if(f.type==="storage_device"){
+      const devs = devices.storage_devices || [];
+      const curDev = String(values[f.key] ?? f.value ?? "");
+      const curSelect = curDev.startsWith("device:") ? curDev : (curDev.startsWith("/dev/") ? "device:"+curDev : curDev);
+      const curMount = String(values["storage.mount"] ?? data.values?.["storage.mount"] ?? "");
+      const matchVal = (item)=> curSelect === item.select_value || curDev === item.device;
+      const opts = devs.filter(d=>d.selectable!==false).map(d=>{
+        const lbl = d.display_name || d.device;
+        const tag = d.recommended ? " ★" : (d.status==="needs_mount" ? " (mount on save)" : "");
+        return `<option value="${d.select_value}" ${matchVal(d)?"selected":""}>${lbl}${tag}</option>`;
+      }).join("");
+      const inList = devs.some(matchVal);
+      return `<select data-key="${f.key}">${opts}
+        ${!inList && curDev ? `<option value="${curSelect}" selected>${curDev} (saved)</option>` : ""}
+        </select>
+        <div class="muted" style="font-size:11px;margin-top:4px">Mount path: <code>${curMount||"(not mounted)"}</code></div>`;
+    }
+    const step = f.step!=null ? ` step="${f.step}"` : "";
+    const min = f.min!=null ? ` min="${f.min}"` : "";
+    const max = f.max!=null ? ` max="${f.max}"` : "";
+    return `<input type="number" data-key="${f.key}" value="${val}"${step}${min}${max}/>`;
+  }
+
+  const sh = devices.storage_health || {};
+  if(sh.needs_selection){
+    v.appendChild(el(`<div class="card" style="border-color:var(--nok)"><b style="color:var(--nok)">Storage not ready</b>
+      <p class="muted">${sh.message||"Select a storage volume below."}</p></div>`));
+  }
+
+  for(const sec of data.sections){
+    const gridClass = sec.id === "storage" ? "grid cols-1" : "grid cols-2";
+    const card=el(`<div class="card"><h2>${sec.title}</h2><div class="${gridClass}" id="sec-${sec.id}"></div></div>`);
+    const grid=card.querySelector(`#sec-${sec.id}`);
+    for(const f of sec.fields){
+      const cell=el(`<div><label>${f.label}</label>${fieldControl(f)}
+        <div class="muted" style="font-size:11px;margin-top:2px">default: ${f.default}</div></div>`);
+      grid.appendChild(cell);
+    }
+    v.appendChild(card);
+  }
+
+  const devs = devices.storage_devices || [];
+  if(devs.length){
+    const rows = devs.map(d=>{
+      const st = d.mounted ? `<span style="color:var(--ok)">mounted</span>` : `<span style="color:var(--warn,#c90)">not mounted</span>`;
+      const mp = d.mount_path ? ` → <code>${d.mount_path}</code>` : "";
+      return `<tr><td><b>${d.name||d.device}</b><div class="muted" style="font-size:11px">${d.device}</div></td>
+        <td>${d.transport||""} · ${d.size||""} · ${(d.fstype||"").toUpperCase()}</td>
+        <td>${st}${mp}</td></tr>`;
+    }).join("");
+    v.appendChild(el(`<div class="card"><div class="row"><h2 style="margin:0">Attached storage</h2>
+      <span class="spacer"></span><button class="btn secondary" id="refreshStorage">Refresh list</button></div>
+      <p class="muted" style="margin:8px 0 12px">Select one device for all data (images, exports, teaching, ROI archive). Folders are created automatically.</p>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+      <thead><tr style="text-align:left;opacity:.7"><th>Device</th><th>Type</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`));
+    v.querySelector("#refreshStorage").onclick=()=>VIEWS.settings(v);
+  }
+
+  const actions=el(`<div class="card"><div class="row">
+    <button class="btn" id="saveSet">Save &amp; apply</button>
+    <button class="btn secondary" id="reloadHw">Reload hardware only</button>
+    <span class="spacer"></span><span id="setMsg" class="muted"></span></div>
+    <div class="muted" style="margin-top:8px">Camera/barcode/lighting changes apply immediately after save. Storage mount paths apply without restart.</div></div>`);
+  v.appendChild(actions);
+
+  function collectValues(){
+    const out={};
+    v.querySelectorAll("[data-key]").forEach(el=>{
+      if(el.dataset.custom==="1") return; // prefer select; custom input is fallback
+      const k=el.dataset.key;
+      let val=el.value;
+      if(el.tagName==="SELECT" && (val==="true"||val==="false")) val = val==="true";
+      else if(el.type==="number") val = val.includes(".") ? parseFloat(val) : parseInt(val,10);
+      out[k]=val;
+    });
+    // Custom text overrides for device fields when user typed in the input below select.
+    v.querySelectorAll("input[data-custom='1']").forEach(inp=>{
+      if(inp.dataset.key.startsWith("storage.")) return;
+      if(inp.value.trim()) out[inp.dataset.key]=inp.value.trim();
+    });
+    return out;
+  }
+
+  actions.querySelector("#saveSet").onclick=async()=>{
+    const msg=actions.querySelector("#setMsg");
+    try{
+      const res=await api("/settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({...collectValues(),reload_hardware:true})});
+      msg.textContent = res.hardware?.camera
+        ? `Applied (${res.hardware.camera}, open=${res.hardware.camera_open})`
+        : (res.storage?.device ? `Storage: ${res.storage.ok ? "OK" : "select volume"} · ${res.storage.device} @ ${res.storage.mount||"?"}` : "Saved");
+      toast("Settings saved");
+    }catch(e){ msg.textContent=e.message; toast(e.message,4000); }
+  };
+  actions.querySelector("#reloadHw").onclick=async()=>{
+    try{
+      const res=await api("/settings/reload-hardware",{method:"POST"});
+      actions.querySelector("#setMsg").textContent=`Reloaded: ${res.hardware?.camera}`;
+      toast("Hardware reloaded");
+    }catch(e){ toast(e.message,4000); }
+  };
+};
+
+/* ---------------- boot ---------------- */
+renderNav(); renderView(); refreshHealth(); connectWs();
+setInterval(refreshHealth, 8000);
+</script>
+</body>
+</html>
