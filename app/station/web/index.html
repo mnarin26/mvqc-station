@@ -93,6 +93,11 @@
   .inspect-surface-card h3 { margin:0 0 10px; font-size:14px; }
   .inspect-placeholder { margin-top:16px; text-align:center; padding:40px 16px; color:var(--muted); }
   .inspect-live-panel { margin-top:12px; }
+  .inspect-live-wrap { position:relative; width:100%; line-height:0; }
+  .inspect-live-wrap img.preview { display:block; width:100%; }
+  .inspect-live-wrap canvas { position:absolute; left:0; top:0; width:100%; height:100%; pointer-events:none; }
+  .inspect-live-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .inspect-live-head h2 { margin:0; flex:1; }
   @media (max-width:900px) {
     .inspect-workspace { grid-template-columns:1fr; }
     .inspect-right { position:static; }
@@ -394,6 +399,7 @@ VIEWS.teaching = async (v)=>{
 
 VIEWS.inspect = async (v)=>{
   const products=await api("/products");
+  const inspectLive={rois:[],recipe:null,surfaceIndex:1,animId:null};
   v.innerHTML="";
   const top=el(`<div class="card"><h2>Inspect</h2>
     <div class="row">
@@ -405,7 +411,17 @@ VIEWS.inspect = async (v)=>{
       </div>
     </div></div>`);
   v.appendChild(top);
-  const live=el(`<div class="card inspect-live-panel hide" id="livePanel"><h2>Canlı önizleme</h2><img class="preview" id="mjpeg" alt="live"/></div>`);
+  const live=el(`<div class="card inspect-live-panel hide" id="livePanel">
+    <div class="inspect-live-head">
+      <h2>Canlı önizleme</h2>
+      <select id="liveSurf" class="hide" style="width:auto;min-width:140px"></select>
+    </div>
+    <div class="inspect-live-wrap">
+      <img class="preview" id="mjpeg" alt="live"/>
+      <canvas id="liveRoiCanvas"></canvas>
+    </div>
+    <div class="muted" id="liveRoiHint" style="margin-top:8px;font-size:12px">Ürün seçin — ROI kutuları canlı görüntü üzerinde gösterilir.</div>
+  </div>`);
   v.appendChild(live);
   const placeholder=el(`<div class="card inspect-placeholder" id="inspectPlaceholder">Barkod okutun veya ürün seçip <b>Run inspection</b> ile denetimi başlatın.</div>`);
   v.appendChild(placeholder);
@@ -416,13 +432,102 @@ VIEWS.inspect = async (v)=>{
   v.appendChild(workspace);
   const mjpeg=document.getElementById("mjpeg");
   const livePanel=document.getElementById("livePanel");
-  function setLivePreview(on){
-    if(on){ mjpeg.src="/stream/preview"; livePanel.classList.remove("hide"); }
-    else { mjpeg.removeAttribute("src"); livePanel.classList.add("hide"); }
+  const liveCanvas=document.getElementById("liveRoiCanvas");
+  const liveSurf=document.getElementById("liveSurf");
+  const liveRoiHint=document.getElementById("liveRoiHint");
+  const iprod=top.querySelector("#iprod");
+  const bcInput=top.querySelector("#bc");
+
+  function resolveProductId(){
+    if(iprod.value) return +iprod.value;
+    const code=bcInput.value.trim();
+    if(!code) return null;
+    const p=products.find(x=>x.barcode && x.barcode===code);
+    return p?p.id:null;
   }
+
+  function applySurfaceRois(){
+    const surf=inspectLive.recipe?.surfaces?.find(s=>s.surface_index===inspectLive.surfaceIndex);
+    inspectLive.rois=surf?.rois||[];
+    const n=inspectLive.rois.length;
+    liveRoiHint.textContent=n
+      ? `${n} ROI gösteriliyor (mavi kutu) — Yüzey ${inspectLive.surfaceIndex}`
+      : "Bu yüzeyde kayıtlı ROI yok.";
+  }
+
+  async function loadLiveRois(){
+    const pid=resolveProductId();
+    inspectLive.recipe=null; inspectLive.rois=[];
+    liveSurf.classList.add("hide"); liveSurf.innerHTML="";
+    if(!pid){ liveRoiHint.textContent="Ürün seçin veya barkod girin — ROI kutuları canlı görüntü üzerinde gösterilir."; return; }
+    try{
+      let recipe;
+      try{ recipe=await api(`/products/${pid}/active-recipe`); }
+      catch(_){
+        const recs=await api(`/products/${pid}/recipes`);
+        if(recs.length) recipe=await api(`/recipes/${recs[0].id}`);
+      }
+      inspectLive.recipe=recipe||null;
+      if(!inspectLive.recipe?.surfaces?.length){ liveRoiHint.textContent="Bu ürün için recipe/ROI bulunamadı."; return; }
+      const surfaces=inspectLive.recipe.surfaces.sort((a,b)=>a.surface_index-b.surface_index);
+      if(surfaces.length>1){
+        liveSurf.classList.remove("hide");
+        surfaces.forEach(s=> liveSurf.appendChild(el(`<option value="${s.surface_index}">Yüzey ${s.surface_index}${s.name?' · '+s.name:''}</option>`)));
+        if(!surfaces.some(s=>s.surface_index===inspectLive.surfaceIndex)) inspectLive.surfaceIndex=surfaces[0].surface_index;
+        liveSurf.value=String(inspectLive.surfaceIndex);
+      } else {
+        inspectLive.surfaceIndex=surfaces[0].surface_index;
+      }
+      applySurfaceRois();
+    }catch(e){ liveRoiHint.textContent="ROI yüklenemedi: "+e.message; }
+  }
+
+  function drawLiveRois(){
+    if(!liveCanvas||!mjpeg.src) return;
+    const nw=mjpeg.naturalWidth, nh=mjpeg.naturalHeight;
+    if(!nw||!nh) return;
+    const dw=mjpeg.clientWidth, dh=mjpeg.clientHeight;
+    if(liveCanvas.width!==dw||liveCanvas.height!==dh){ liveCanvas.width=dw; liveCanvas.height=dh; }
+    const sx=dw/nw, sy=dh/nh;
+    const ctx=liveCanvas.getContext("2d");
+    ctx.clearRect(0,0,dw,dh);
+    inspectLive.rois.forEach((r,i)=>{
+      const g=r.geometry;
+      ctx.strokeStyle="#3b82f6"; ctx.lineWidth=2;
+      ctx.strokeRect(g.x*sx,g.y*sy,g.w*sx,g.h*sy);
+      ctx.fillStyle="rgba(59,130,246,0.9)"; ctx.font="bold 13px system-ui,sans-serif";
+      ctx.fillText(r.name||("ROI "+(r.roi_index||i+1)), g.x*sx+4, g.y*sy+16);
+    });
+  }
+
+  function startLiveRoiLoop(){
+    stopLiveRoiLoop();
+    function tick(){ drawLiveRois(); inspectLive.animId=requestAnimationFrame(tick); }
+    tick();
+  }
+  function stopLiveRoiLoop(){
+    if(inspectLive.animId){ cancelAnimationFrame(inspectLive.animId); inspectLive.animId=null; }
+    if(liveCanvas){ liveCanvas.getContext("2d").clearRect(0,0,liveCanvas.width,liveCanvas.height); }
+  }
+
+  function setLivePreview(on){
+    if(on){
+      mjpeg.src="/stream/preview";
+      livePanel.classList.remove("hide");
+      loadLiveRois().then(()=> startLiveRoiLoop());
+    }else{
+      stopLiveRoiLoop();
+      mjpeg.removeAttribute("src");
+      livePanel.classList.add("hide");
+    }
+  }
+
   top.querySelector("#liveToggle").onchange=(e)=> setLivePreview(e.target.checked);
+  iprod.onchange=()=>{ loadLiveRois(); };
+  bcInput.addEventListener("input", ()=>{ loadLiveRois(); });
+  liveSurf.onchange=()=>{ inspectLive.surfaceIndex=+liveSurf.value; applySurfaceRois(); };
   top.querySelector("#runBtn").onclick=runInspect;
-  document.getElementById("bc").addEventListener("keydown",(e)=>{ if(e.key==="Enter") runInspect(); });
+  bcInput.addEventListener("keydown",(e)=>{ if(e.key==="Enter") runInspect(); });
 };
 
 function roiItemClass(dec){ return dec==="OK"?"ok":(dec==="WARN"?"warn":"nok"); }
