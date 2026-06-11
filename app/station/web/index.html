@@ -21,6 +21,7 @@
   nav button { background:transparent; color:var(--muted); border:1px solid transparent; padding:8px 14px; border-radius:8px; cursor:pointer; font-size:14px; }
   nav button.active { color:var(--ink); background:var(--panel2); border-color:var(--line); }
   main { padding:18px; max-width:1200px; margin:0 auto; }
+  main.inspect-wide { max-width:min(1600px, 100%); }
   .grid { display:grid; gap:16px; }
   .cols-2 { grid-template-columns:1fr 1fr; }
   .cols-3 { grid-template-columns:repeat(3,1fr); }
@@ -70,6 +71,32 @@
   .help pre { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:12px; overflow:auto; font-size:12px; line-height:1.45; }
   .help .toc a { color:var(--accent); text-decoration:none; font-size:13px; }
   .help .flow { background:var(--bg); border-left:3px solid var(--accent); padding:10px 14px; margin:10px 0; font-size:13px; color:var(--muted); }
+  .inspect-workspace { display:grid; grid-template-columns:minmax(0,1fr) minmax(280px,400px); gap:16px; margin-top:16px; align-items:start; }
+  .inspect-left .surface-block { margin-bottom:16px; }
+  .inspect-left .surface-block:last-child { margin-bottom:0; }
+  .inspect-left .surface-title { margin:0 0 8px; font-size:14px; color:var(--muted); }
+  .inspect-right { position:sticky; top:72px; }
+  .inspect-right .banner { font-size:32px; padding:16px; margin-bottom:12px; }
+  .inspect-roi-list { display:flex; flex-direction:column; gap:8px; }
+  .inspect-roi-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); }
+  .inspect-roi-item.ok { border-color:var(--ok); background:rgba(22,163,74,.12); }
+  .inspect-roi-item.warn { border-color:var(--warn); background:rgba(217,119,6,.12); }
+  .inspect-roi-item.nok { border-color:var(--nok); background:rgba(220,38,38,.12); }
+  .inspect-roi-item .roi-dot { width:10px; height:10px; border-radius:99px; flex-shrink:0; }
+  .inspect-roi-item.ok .roi-dot { background:var(--ok); }
+  .inspect-roi-item.warn .roi-dot { background:var(--warn); }
+  .inspect-roi-item.nok .roi-dot { background:var(--nok); }
+  .inspect-roi-item .roi-name { font-weight:600; flex:1; font-size:14px; }
+  .inspect-roi-item .roi-meta { font-size:12px; color:var(--muted); text-align:right; }
+  .inspect-roi-item .roi-dec { font-size:13px; font-weight:700; min-width:52px; text-align:right; }
+  .inspect-surface-card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:12px; }
+  .inspect-surface-card h3 { margin:0 0 10px; font-size:14px; }
+  .inspect-placeholder { margin-top:16px; text-align:center; padding:40px 16px; color:var(--muted); }
+  .inspect-live-panel { margin-top:12px; }
+  @media (max-width:900px) {
+    .inspect-workspace { grid-template-columns:1fr; }
+    .inspect-right { position:static; }
+  }
 </style>
 </head>
 <body>
@@ -138,7 +165,9 @@ async function refreshHealth(){
 
 /* ---------------- Views ---------------- */
 async function renderView(){
-  const v=document.getElementById("view"); v.innerHTML="<p class='muted'>Loading...</p>";
+  const v=document.getElementById("view");
+  v.classList.toggle("inspect-wide", state.tab==="inspect");
+  v.innerHTML="<p class='muted'>Loading...</p>";
   try { await VIEWS[state.tab](v); } catch(e){ v.innerHTML=`<div class='card'>Error: ${e.message}</div>`; }
 }
 const VIEWS={};
@@ -370,40 +399,78 @@ VIEWS.inspect = async (v)=>{
     <div class="row">
       <div style="flex:1"><label>Barcode (scan to auto-run)</label><input id="bc" placeholder="scan or type barcode"/></div>
       <div style="width:240px"><label>or Product</label><select id="iprod"><option value="">--</option>${products.map(p=>`<option value="${p.id}">${p.name} (${p.status})</option>`).join("")}</select></div>
-      <div style="align-self:flex-end"><button class="btn" id="runBtn">Run inspection</button></div>
+      <div style="align-self:flex-end;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label class="row" style="margin:0;font-size:13px;cursor:pointer"><input type="checkbox" id="liveToggle" style="width:auto"/> Canlı görüntü</label>
+        <button class="btn" id="runBtn">Run inspection</button>
+      </div>
     </div></div>`);
   v.appendChild(top);
-  const live=el(`<div class="card" style="margin-top:16px"><h2>Live preview</h2><img class="preview" id="mjpeg" src="/stream/preview"/></div>`);
+  const live=el(`<div class="card inspect-live-panel hide" id="livePanel"><h2>Canlı önizleme</h2><img class="preview" id="mjpeg" alt="live"/></div>`);
   v.appendChild(live);
-  const result=el(`<div id="resultBox" style="margin-top:16px"></div>`); v.appendChild(result);
+  const placeholder=el(`<div class="card inspect-placeholder" id="inspectPlaceholder">Barkod okutun veya ürün seçip <b>Run inspection</b> ile denetimi başlatın.</div>`);
+  v.appendChild(placeholder);
+  const workspace=el(`<div class="inspect-workspace hide" id="inspectWorkspace">
+    <div class="inspect-left" id="inspectLeft"></div>
+    <div class="inspect-right" id="inspectRight"></div>
+  </div>`);
+  v.appendChild(workspace);
+  const mjpeg=document.getElementById("mjpeg");
+  const livePanel=document.getElementById("livePanel");
+  function setLivePreview(on){
+    if(on){ mjpeg.src="/stream/preview"; livePanel.classList.remove("hide"); }
+    else { mjpeg.removeAttribute("src"); livePanel.classList.add("hide"); }
+  }
+  top.querySelector("#liveToggle").onchange=(e)=> setLivePreview(e.target.checked);
   top.querySelector("#runBtn").onclick=runInspect;
   document.getElementById("bc").addEventListener("keydown",(e)=>{ if(e.key==="Enter") runInspect(); });
 };
+
+function roiItemClass(dec){ return dec==="OK"?"ok":(dec==="WARN"?"warn":"nok"); }
+function roiItemText(dec){ return dec==="OK"?"OK":(dec==="WARN"?"UYARI":"HATA"); }
 
 async function runInspect(){
   const bc=document.getElementById("bc"); const iprod=document.getElementById("iprod");
   const body={}; if(bc && bc.value.trim()) body.barcode=bc.value.trim(); else if(iprod && iprod.value) body.product_id=+iprod.value;
   if(!body.barcode && !body.product_id) return toast("Scan a barcode or pick a product");
-  const box=document.getElementById("resultBox"); box.innerHTML="<div class='card'>Inspecting…</div>";
+  const left=document.getElementById("inspectLeft");
+  const right=document.getElementById("inspectRight");
+  const workspace=document.getElementById("inspectWorkspace");
+  const placeholder=document.getElementById("inspectPlaceholder");
+  if(!left||!right) return;
+  workspace.classList.remove("hide");
+  placeholder.classList.add("hide");
+  left.innerHTML="<div class='card'>Denetim yapılıyor…</div>";
+  right.innerHTML="";
   try{
     const r=await api("/inspect",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    box.innerHTML="";
-    box.appendChild(el(`<div class="banner ${r.result==='PASS'?'pass':'fail'}">${r.result}</div>`));
+    left.innerHTML="";
+    right.innerHTML="";
+    right.appendChild(el(`<div class="banner ${r.result==='PASS'?'pass':'fail'}">${r.result}</div>`));
     r.surfaces.forEach(s=>{
-      const card=el(`<div class="card" style="margin-top:12px"><h2>Surface ${s.surface_index} — ${s.result} (${(s.overall_confidence*100).toFixed(0)}%)</h2>
-        <div class="grid cols-2">
-          <img class="preview" src="${s.annotated_image}"/>
-          <div><table><tr><th>ROI</th><th>Label</th><th>Conf</th><th>Decision</th></tr>
-          ${s.roi_results.map(rr=>{
-            const cls=rr.decision==='OK'?'dec-ok':(rr.decision==='WARN'?'dec-warn':'dec-nok');
-            const txt=rr.decision==='OK'?'OK':(rr.decision==='WARN'?'UYARI':'HATA');
-            return `<tr><td>${rr.name||('ROI'+rr.roi_index)}</td><td>${rr.label}</td><td>${(rr.confidence*100).toFixed(0)}%</td><td class="${cls}">${txt}</td></tr>`;
-          }).join("")}
-          </table><div class="muted" style="margin-top:8px">${s.saved?('Archived: '+s.saved_reason):'Not archived'}</div></div>
-        </div></div>`);
-      box.appendChild(card);
+      left.appendChild(el(`<div class="surface-block">
+        <div class="surface-title">Yüzey ${s.surface_index} — çekilen görüntü</div>
+        <img class="preview" src="${s.annotated_image}" alt="Surface ${s.surface_index}"/>
+      </div>`));
+      const roiList=s.roi_results.map(rr=>{
+        const cls=roiItemClass(rr.decision);
+        return `<div class="inspect-roi-item ${cls}">
+          <span class="roi-dot"></span>
+          <span class="roi-name">${rr.name||('ROI '+rr.roi_index)}</span>
+          <span class="roi-meta">${rr.label} · ${(rr.confidence*100).toFixed(0)}%</span>
+          <span class="roi-dec ${cls==='ok'?'dec-ok':(cls==='warn'?'dec-warn':'dec-nok')}">${roiItemText(rr.decision)}</span>
+        </div>`;
+      }).join("");
+      right.appendChild(el(`<div class="inspect-surface-card">
+        <h3>Yüzey ${s.surface_index} — ${s.result} (${(s.overall_confidence*100).toFixed(0)}%)</h3>
+        <div class="inspect-roi-list">${roiList}</div>
+        <div class="muted" style="margin-top:10px;font-size:12px">${s.saved?('Arşiv: '+s.saved_reason):'Arşivlenmedi'}</div>
+      </div>`));
     });
-  }catch(e){ box.innerHTML=`<div class="card" style="border-color:var(--nok)">Inspection failed: ${e.message}</div>`; }
+  }catch(e){
+    workspace.classList.add("hide");
+    placeholder.classList.remove("hide");
+    placeholder.innerHTML=`<div style="color:var(--nok)">Denetim başarısız: ${e.message}</div>`;
+  }
 }
 
 VIEWS.models = async (v)=>{
