@@ -101,7 +101,7 @@ class Roi(Base):
     roi_index: Mapped[int] = mapped_column(Integer, nullable=False)
     # presence | ocr | count | color | anomaly | wrong_component
     inspector_type: Mapped[str] = mapped_column(String, nullable=False, default="presence")
-    geometry: Mapped[str] = mapped_column(Text, nullable=False)  # JSON {x,y,w,h}
+    geometry: Mapped[str] = mapped_column(Text, nullable=False)  # JSON {points:[[x,y],...]}
     params: Mapped[Optional[str]] = mapped_column(Text)  # JSON
     threshold: Mapped[float] = mapped_column(REAL, nullable=False, default=0.5)
 

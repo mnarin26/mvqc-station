@@ -28,6 +28,7 @@ from ..db.repositories import (
 from ..decision.rules import aggregate_surface
 from ..inference.preprocess import crop_roi
 from ..inspectors import get_inspector
+from .geometry import normalize_geometry_dict
 from .overlay import draw_overlay
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ class InspectionEngine:
                         "name": roi.name,
                         "roi_index": roi.roi_index,
                         "inspector_type": roi.inspector_type,
-                        "geometry": json.loads(roi.geometry),
+                        "geometry": normalize_geometry_dict(json.loads(roi.geometry)),
                         "params": json.loads(roi.params) if roi.params else None,
                         "threshold": roi.threshold,
                     })

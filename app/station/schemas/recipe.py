@@ -4,17 +4,34 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from ..core.geometry import normalize_geometry_dict
 
 
 class Geometry(BaseModel):
-    """Axis-aligned ROI rectangle in absolute pixel coordinates of the surface
-    reference image."""
+    """Closed polygon ROI in absolute pixel coordinates of the reference image.
 
-    x: int = Field(ge=0)
-    y: int = Field(ge=0)
-    w: int = Field(gt=0)
-    h: int = Field(gt=0)
+  Stored as ``{"points": [[x,y], ...]}``. Legacy ``{x,y,w,h}`` rectangles are
+  converted to 4-point polygons on load.
+    """
+
+    points: List[List[int]] = Field(min_length=3)
+
+    @field_validator("points")
+    @classmethod
+    def _validate_points(cls, pts: List[List[int]]) -> List[List[int]]:
+        out = [[int(p[0]), int(p[1])] for p in pts]
+        if len(out) < 3:
+            raise ValueError("polygon needs at least 3 points")
+        return out
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "points" not in data and "x" in data:
+            return normalize_geometry_dict(data)
+        return data
 
 
 class RoiSchema(BaseModel):

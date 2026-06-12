@@ -20,6 +20,7 @@ from ..db.repositories import (
     TeachingRepository,
 )
 from ..inference.preprocess import crop_roi
+from .geometry import normalize_geometry_dict
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,7 @@ class TeachingService:
             product_name = product.name
             surface_index = surface.surface_index
             roi_defs = [
-                {"id": r.id, "roi_index": r.roi_index, "geometry": json.loads(r.geometry)}
+                {"id": r.id, "roi_index": r.roi_index, "geometry": normalize_geometry_dict(json.loads(r.geometry))}
                 for r in target_rois
             ]
             session = TeachingRepository(s).create_session(surface_id, label)

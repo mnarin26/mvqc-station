@@ -1,11 +1,11 @@
-export interface Geometry { x: number; y: number; w: number; h: number; }
+export type { Geometry } from "./geometry";
 
 export interface Roi {
   id?: number;
   name?: string | null;
   roi_index: number;
   inspector_type: string;
-  geometry: Geometry;
+  geometry: import("./geometry").Geometry;
   threshold: number;
 }
 
@@ -43,7 +43,7 @@ export interface RoiResult {
   label: string;
   confidence: number;
   decision: string;
-  geometry: Geometry;
+  geometry: import("./geometry").Geometry;
 }
 
 export interface SurfaceResult {

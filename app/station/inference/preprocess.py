@@ -19,6 +19,8 @@ from typing import Dict, Tuple
 
 import numpy as np
 
+from ..core.geometry import bbox_from_points, geometry_points
+
 DEFAULT_INPUT_SPEC: Dict = {
     "layout": "NCHW",
     "size": [224, 224],
@@ -30,17 +32,28 @@ DEFAULT_INPUT_SPEC: Dict = {
 
 
 def crop_roi(frame: np.ndarray, geometry: Dict) -> np.ndarray:
-    """Crop an axis-aligned ROI (clamped to image bounds). Frame is BGR HxWx3."""
-    h, w = frame.shape[:2]
-    x = max(0, int(geometry["x"]))
-    y = max(0, int(geometry["y"]))
-    rw = int(geometry["w"])
-    rh = int(geometry["h"])
-    x2 = min(w, x + rw)
-    y2 = min(h, y + rh)
-    if x2 <= x or y2 <= y:
-        raise ValueError(f"empty ROI crop for geometry {geometry} on {w}x{h} frame")
-    return frame[y:y2, x:x2].copy()
+    """Crop bounding box, mask to polygon interior; outside pixels become black.
+
+    Frame is BGR HxWx3. Geometry is ``{points:[[x,y],...]}`` or legacy rect.
+    """
+    import cv2
+
+    points = geometry_points(geometry)
+    x1, y1, x2, y2 = bbox_from_points(points)
+    fh, fw = frame.shape[:2]
+    x1 = max(0, x1)
+    y1 = max(0, y1)
+    x2 = min(fw - 1, x2)
+    y2 = min(fh - 1, y2)
+    if x2 < x1 or y2 < y1:
+        raise ValueError(f"empty ROI crop for geometry {geometry} on {fw}x{fh} frame")
+
+    crop = frame[y1 : y2 + 1, x1 : x2 + 1].copy()
+    local = np.array([[[px - x1, py - y1]] for px, py in points], dtype=np.int32)
+    mask = np.zeros(crop.shape[:2], dtype=np.uint8)
+    cv2.fillPoly(mask, [local.reshape(-1, 1, 2)], 255)
+    crop[mask == 0] = 0
+    return crop
 
 
 def preprocess(crop_bgr: np.ndarray, input_spec: Dict | None = None) -> np.ndarray:

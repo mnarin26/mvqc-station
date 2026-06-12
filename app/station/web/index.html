@@ -133,6 +133,23 @@ async function api(path, opts={}) {
 function toast(msg, ms=2600){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.remove("hide"); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.add("hide"),ms); }
 function el(html){ const d=document.createElement("div"); d.innerHTML=html.trim(); return d.firstElementChild; }
 
+function normalizeGeometry(g){
+  if(g.points && g.points.length>=3) return {points:g.points.map(p=>[+p[0],+p[1]])};
+  if(g.x!=null && g.y!=null && g.w!=null && g.h!=null)
+    return {points:[[g.x,g.y],[g.x+g.w,g.y],[g.x+g.w,g.y+g.h],[g.x,g.y+g.h]]};
+  return {points:[]};
+}
+function geoPoints(g){ return normalizeGeometry(g).points; }
+function geoDist(a,b){ return Math.hypot(a[0]-b[0],a[1]-b[1]); }
+function drawPolyStroke(ctx, pts, sx, sy, color, closed){
+  if(!pts.length) return;
+  sy=sy??sx;
+  ctx.beginPath();
+  pts.forEach((p,i)=>{ const x=p[0]*sx, y=p[1]*sy; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  if(closed && pts.length>=3) ctx.closePath();
+  ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+}
+
 const TABS = [["dashboard","Dashboard"],["products","Products"],["teaching","Teaching"],
   ["inspect","Inspect"],["models","Models"],["settings","Settings"],["help","Help"]];
 function renderNav(){
@@ -249,7 +266,10 @@ VIEWS.teaching = async (v)=>{
 
   const editor=el(`<div class="card" style="margin-top:16px"><h2>2 · Draw ROIs</h2>
     <div class="row"><button class="btn secondary" id="tsnap">Capture snapshot</button>
-      <span class="muted">Drag on the image to add a ROI box.</span><span class="spacer"></span>
+      <button class="btn secondary ok" id="toolPoly">Polygon</button>
+      <button class="btn secondary" id="toolRect">Rectangle</button>
+      <span class="muted" id="toolHint">Click points around the part; double-click or click first point to close.</span>
+      <span class="spacer"></span>
       <button class="btn secondary" id="tclear">Clear</button><button class="btn" id="tsaveroi">Save ROIs</button></div>
     <div class="grid cols-2" style="margin-top:12px">
       <canvas id="tcanvas" width="600" height="300"></canvas>
@@ -281,18 +301,45 @@ VIEWS.teaching = async (v)=>{
     if(state.recipe){ state.recipe.surfaces.forEach(s=> tsurf.appendChild(el(`<option value="${s.id}">Surface ${s.surface_index} ${s.name?('· '+s.name):''}</option>`))); }
   };
   tsurf.onchange=()=>{ state.selectedSurface=+tsurf.value||null; const s=state.recipe?.surfaces.find(x=>x.id===state.selectedSurface);
-    state.rois=(s?.rois||[]).map(r=>({id:r.id,name:r.name,geometry:{...r.geometry},
+    state.rois=(s?.rois||[]).map(r=>({id:r.id,name:r.name,geometry:normalizeGeometry(r.geometry),
       params:r.params||{defects:[]}, defects:(r.params?.defects||[]).map(d=>({label:d.label||"",severity:d.severity||"error"}))}));
-    drawCanvas(); renderRoiList(); renderCaptureButtons(); refreshTeachStatus(); };
+    selectedRoiIdx=null; draftPolygon=[]; drawCanvas(); renderRoiList(); renderCaptureButtons(); refreshTeachStatus(); };
 
   const canvas=editor.querySelector("#tcanvas"); const ctx=canvas.getContext("2d");
-  let scale=1, imgObj=null;
+  let scale=1, imgObj=null, drawTool="polygon", draftPolygon=[], selectedRoiIdx=null, dragVertex=null;
+  const toolPoly=editor.querySelector("#toolPoly"), toolRect=editor.querySelector("#toolRect"), toolHint=editor.querySelector("#toolHint");
 
-  /** Map pointer coords to canvas pixels (CSS max-width scales display vs internal size). */
+  function setDrawTool(t){
+    drawTool=t; draftPolygon=[];
+    toolPoly.classList.toggle("ok", t==="polygon");
+    toolRect.classList.toggle("ok", t==="rect");
+    toolHint.textContent=t==="polygon"
+      ? "Click points around the part; double-click or click first point to close."
+      : "Drag on the image to draw a rectangle.";
+    drawCanvas();
+  }
+  toolPoly.onclick=()=> setDrawTool("polygon");
+  toolRect.onclick=()=> setDrawTool("rect");
+
   function pointerToCanvas(e){
     const r=canvas.getBoundingClientRect();
     const sx=canvas.width/r.width, sy=canvas.height/r.height;
     return {x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy};
+  }
+
+  function hitVertex(px,py){
+    if(selectedRoiIdx==null) return null;
+    const pts=geoPoints(state.rois[selectedRoiIdx].geometry);
+    for(let vi=0; vi<pts.length; vi++){
+      if(geoDist([px,py],[pts[vi][0]*scale,pts[vi][1]*scale])<10) return vi;
+    }
+    return null;
+  }
+
+  function finishDraftPolygon(){
+    if(draftPolygon.length<3) return;
+    state.rois.push({name:"",geometry:{points:draftPolygon.map(p=>[p[0],p[1]])},params:{defects:[]},defects:[]});
+    draftPolygon=[]; renderRoiList(); renderCaptureButtons(); drawCanvas();
   }
 
   editor.querySelector("#tsnap").onclick=async()=>{
@@ -301,19 +348,65 @@ VIEWS.teaching = async (v)=>{
       canvas.style.width=canvas.width+"px"; canvas.style.height=canvas.height+"px"; drawCanvas(); };
     imgObj.src=snap.image;
   };
-  function drawCanvas(){ if(!imgObj){ctx.clearRect(0,0,canvas.width,canvas.height);return;} ctx.drawImage(imgObj,0,0,canvas.width,canvas.height);
-    state.rois.forEach((r,i)=>{ const g=r.geometry; ctx.strokeStyle="#3b82f6"; ctx.lineWidth=2; ctx.strokeRect(g.x*scale,g.y*scale,g.w*scale,g.h*scale);
-      ctx.fillStyle="#3b82f6"; ctx.font="13px sans-serif"; ctx.fillText((r.name||("ROI"+(i+1))),g.x*scale+3,g.y*scale+14); });
-    if(state.drawing){ const d=state.drawing; ctx.strokeStyle="#22d3ee"; ctx.strokeRect(d.x,d.y,d.w,d.h);} }
+
+  function drawCanvas(){
+    if(!imgObj){ctx.clearRect(0,0,canvas.width,canvas.height);return;}
+    ctx.drawImage(imgObj,0,0,canvas.width,canvas.height);
+    state.rois.forEach((r,i)=>{
+      const pts=geoPoints(r.geometry);
+      const col=selectedRoiIdx===i?"#22d3ee":"#3b82f6";
+      drawPolyStroke(ctx, pts, scale, scale, col, true);
+      if(pts[0]){ ctx.fillStyle=col; ctx.font="13px sans-serif"; ctx.fillText(r.name||("ROI"+(i+1)), pts[0][0]*scale+3, pts[0][1]*scale+14); }
+      if(selectedRoiIdx===i){
+        pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,6,0,Math.PI*2);
+          ctx.fillStyle="#22d3ee"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke(); });
+      }
+    });
+    if(draftPolygon.length){
+      ctx.setLineDash([6,4]); drawPolyStroke(ctx, draftPolygon, scale, scale, "#22d3ee", draftPolygon.length>=3);
+      ctx.setLineDash([]);
+      draftPolygon.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,i===0?7:4,0,Math.PI*2);
+        ctx.fillStyle=i===0?"#22d3ee":"#3b82f6"; ctx.fill(); });
+    }
+    if(state.drawing){ const d=state.drawing; ctx.strokeStyle="#22d3ee"; ctx.strokeRect(d.x,d.y,d.w,d.h); }
+  }
+
   let start=null;
-  canvas.onpointerdown=(e)=>{ canvas.setPointerCapture(e.pointerId); start=pointerToCanvas(e); };
-  canvas.onpointermove=(e)=>{ if(!start)return; const p=pointerToCanvas(e);
-    state.drawing={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)}; drawCanvas(); };
+  canvas.onpointerdown=(e)=>{
+    canvas.setPointerCapture(e.pointerId);
+    const p=pointerToCanvas(e);
+    const vi=hitVertex(p.x,p.y);
+    if(vi!=null){ dragVertex={roi:selectedRoiIdx, vi}; return; }
+    if(drawTool==="rect"){ start=p; return; }
+    const ip=[Math.round(p.x/scale), Math.round(p.y/scale)];
+    if(draftPolygon.length>=3 && geoDist(ip, draftPolygon[0])<14/scale){ finishDraftPolygon(); return; }
+    draftPolygon.push(ip); drawCanvas();
+  };
+  canvas.onpointermove=(e)=>{
+    const p=pointerToCanvas(e);
+    if(dragVertex){
+      const pts=geoPoints(state.rois[dragVertex.roi].geometry);
+      pts[dragVertex.vi]=[Math.round(p.x/scale), Math.round(p.y/scale)];
+      state.rois[dragVertex.roi].geometry={points:pts.map(x=>[x[0],x[1]])};
+      drawCanvas(); return;
+    }
+    if(drawTool==="rect" && start){
+      state.drawing={x:Math.min(start.x,p.x),y:Math.min(start.y,p.y),w:Math.abs(p.x-start.x),h:Math.abs(p.y-start.y)};
+      drawCanvas();
+    }
+  };
   canvas.onpointerup=(e)=>{ try{canvas.releasePointerCapture(e.pointerId);}catch(_){}
-    if(state.drawing && state.drawing.w>8 && state.drawing.h>8){ const d=state.drawing;
-      state.rois.push({name:"",geometry:{x:Math.round(d.x/scale),y:Math.round(d.y/scale),w:Math.round(d.w/scale),h:Math.round(d.h/scale)},params:{defects:[]},defects:[]}); renderRoiList(); }
-    start=null; state.drawing=null; drawCanvas(); };
-  editor.querySelector("#tclear").onclick=()=>{ state.rois=[]; renderRoiList(); drawCanvas(); };
+    dragVertex=null;
+    if(drawTool==="rect" && state.drawing && state.drawing.w>8 && state.drawing.h>8){
+      const d=state.drawing;
+      state.rois.push({name:"",geometry:normalizeGeometry({x:Math.round(d.x/scale),y:Math.round(d.y/scale),
+        w:Math.round(d.w/scale),h:Math.round(d.h/scale)}),params:{defects:[]},defects:[]});
+      renderRoiList(); renderCaptureButtons();
+    }
+    start=null; state.drawing=null; drawCanvas();
+  };
+  canvas.ondblclick=()=>{ if(drawTool==="polygon") finishDraftPolygon(); };
+  editor.querySelector("#tclear").onclick=()=>{ state.rois=[]; draftPolygon=[]; selectedRoiIdx=null; renderRoiList(); renderCaptureButtons(); drawCanvas(); };
   function renderRoiList(){
     const box=editor.querySelector("#roilist"); box.innerHTML="<label>ROIs &amp; defect classes</label>";
     state.rois.forEach((r,i)=>{
@@ -325,6 +418,7 @@ VIEWS.teaching = async (v)=>{
         <button class="btn secondary" style="margin:4px 0 0 30px;font-size:12px;padding:4px 10px" data-act="adddef">+ Add defect class</button>
       </div>`);
       wrap.querySelector("input").oninput=(e)=>{r.name=e.target.value;};
+      wrap.querySelector("input").onfocus=()=>{ selectedRoiIdx=i; drawCanvas(); };
       wrap.querySelector('[data-act="del"]').onclick=()=>{state.rois.splice(i,1);renderRoiList();renderCaptureButtons();drawCanvas();};
       wrap.querySelector('[data-act="adddef"]').onclick=()=>{
         if(!r.defects) r.defects=[];
@@ -350,12 +444,12 @@ VIEWS.teaching = async (v)=>{
     if(!state.selectedSurface) return toast("Select a surface first");
     const body={rois: state.rois.map((r,i)=>{
       const defects=(r.defects||[]).filter(d=>d.label&&d.label.trim()).map(d=>({label:d.label.trim().toUpperCase(),severity:d.severity||"error"}));
-      return {id:(r.id??null),name:r.name||null,roi_index:i+1,geometry:r.geometry,
+      return {id:(r.id??null),name:r.name||null,roi_index:i+1,geometry:normalizeGeometry(r.geometry),
         params:{defects}};
     })};
     try{
       const updated=await api(`/surfaces/${state.selectedSurface}/rois`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-      state.rois=(updated.rois||[]).map(r=>({id:r.id,name:r.name,geometry:{...r.geometry},
+      state.rois=(updated.rois||[]).map(r=>({id:r.id,name:r.name,geometry:normalizeGeometry(r.geometry),
         params:r.params||{defects:[]},defects:(r.params?.defects||[]).map(d=>({label:d.label||"",severity:d.severity||"error"}))}));
       renderRoiList(); renderCaptureButtons(); drawCanvas(); toast("ROIs saved");
     }catch(e){ toast("Save failed: "+e.message,4500); }
@@ -492,11 +586,12 @@ VIEWS.inspect = async (v)=>{
     const ctx=liveCanvas.getContext("2d");
     ctx.clearRect(0,0,dw,dh);
     inspectLive.rois.forEach((r,i)=>{
-      const g=r.geometry;
-      ctx.strokeStyle="#3b82f6"; ctx.lineWidth=2;
-      ctx.strokeRect(g.x*sx,g.y*sy,g.w*sx,g.h*sy);
-      ctx.fillStyle="rgba(59,130,246,0.9)"; ctx.font="bold 13px system-ui,sans-serif";
-      ctx.fillText(r.name||("ROI "+(r.roi_index||i+1)), g.x*sx+4, g.y*sy+16);
+      const pts=geoPoints(r.geometry);
+      drawPolyStroke(ctx, pts, sx, sy, "#3b82f6", true);
+      if(pts[0]){
+        ctx.fillStyle="rgba(59,130,246,0.9)"; ctx.font="bold 13px system-ui,sans-serif";
+        ctx.fillText(r.name||("ROI "+(r.roi_index||i+1)), pts[0][0]*sx+4, pts[0][1]*sy+16);
+      }
     });
   }
 
