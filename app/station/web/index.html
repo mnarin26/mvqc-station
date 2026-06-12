@@ -24,7 +24,8 @@
   main.inspect-wide, main.teach-wide { max-width:min(1600px, 100%); }
   .teach-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,340px); gap:16px; align-items:start; margin-top:12px; }
   .teach-main canvas { display:block; max-width:100%; }
-  .roi-preview-panel { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  .roi-preview-panel { margin-top:0; padding-top:0; }
+  .teach-side #roilist { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
   #roiPreviewCanvas { display:block; background:#000; border:1px solid var(--line); border-radius:8px; max-width:100%; image-rendering:pixelated; }
   .grid { display:grid; gap:16px; }
   .cols-2 { grid-template-columns:1fr 1fr; }
@@ -279,13 +280,13 @@ VIEWS.teaching = async (v)=>{
     <div class="teach-layout">
       <div class="teach-main"><canvas id="tcanvas" width="900" height="500"></canvas></div>
       <div class="teach-side">
-        <div id="roilist"></div>
         <div class="roi-preview-panel">
           <label>ROI yakınlaştırma</label>
           <div class="muted" style="margin-bottom:8px;font-size:12px">Poligon içi büyütülmüş — modele giden alan (dışı siyah)</div>
           <canvas id="roiPreviewCanvas" width="280" height="200"></canvas>
           <div class="muted" id="roiPreviewLbl" style="margin-top:6px;font-size:12px">ROI seçin veya poligon çizin</div>
         </div>
+        <div id="roilist"></div>
       </div>
     </div></div>`);
   v.appendChild(editor);
