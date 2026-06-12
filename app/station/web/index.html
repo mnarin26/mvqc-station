@@ -306,7 +306,7 @@ VIEWS.teaching = async (v)=>{
     selectedRoiIdx=null; draftPolygon=[]; drawCanvas(); renderRoiList(); renderCaptureButtons(); refreshTeachStatus(); };
 
   const canvas=editor.querySelector("#tcanvas"); const ctx=canvas.getContext("2d");
-  let scale=1, imgObj=null, drawTool="polygon", draftPolygon=[], selectedRoiIdx=null, dragVertex=null;
+  let scale=1, imgObj=null, drawTool="polygon", draftPolygon=[], selectedRoiIdx=null, dragVertex=null, dragDraftVertex=null;
   const toolPoly=editor.querySelector("#toolPoly"), toolRect=editor.querySelector("#toolRect"), toolHint=editor.querySelector("#toolHint");
 
   function setDrawTool(t){
@@ -314,7 +314,7 @@ VIEWS.teaching = async (v)=>{
     toolPoly.classList.toggle("ok", t==="polygon");
     toolRect.classList.toggle("ok", t==="rect");
     toolHint.textContent=t==="polygon"
-      ? "Click points around the part; double-click or click first point to close."
+      ? "Nokta ekle → ilk noktaya veya çift tıkla kapat. Köşeleri sürükleyerek düzenle."
       : "Drag on the image to draw a rectangle.";
     drawCanvas();
   }
@@ -327,11 +327,32 @@ VIEWS.teaching = async (v)=>{
     return {x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy};
   }
 
-  function hitVertex(px,py){
-    if(selectedRoiIdx==null) return null;
-    const pts=geoPoints(state.rois[selectedRoiIdx].geometry);
-    for(let vi=0; vi<pts.length; vi++){
-      if(geoDist([px,py],[pts[vi][0]*scale,pts[vi][1]*scale])<10) return vi;
+  function hitDraftVertex(px,py){
+    for(let i=0;i<draftPolygon.length;i++){
+      if(geoDist([px,py],[draftPolygon[i][0]*scale,draftPolygon[i][1]*scale])<12) return i;
+    }
+    return null;
+  }
+  function hitAnyVertex(px,py){
+    for(let ri=state.rois.length-1;ri>=0;ri--){
+      const pts=geoPoints(state.rois[ri].geometry);
+      for(let vi=0;vi<pts.length;vi++){
+        if(geoDist([px,py],[pts[vi][0]*scale,pts[vi][1]*scale])<12) return {roi:ri,vi};
+      }
+    }
+    return null;
+  }
+  function hitRoiAt(px,py){
+    const ix=px/scale, iy=py/scale;
+    for(let ri=state.rois.length-1;ri>=0;ri--){
+      const pts=geoPoints(state.rois[ri].geometry);
+      if(pts.length<3) continue;
+      let inside=false;
+      for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+        const [xi,yi]=pts[i],[xj,yj]=pts[j];
+        if(((yi>iy)!==(yj>iy))&&(ix<(xj-xi)*(iy-yi)/(yj-yi)+xi)) inside=!inside;
+      }
+      if(inside) return ri;
     }
     return null;
   }
@@ -339,6 +360,7 @@ VIEWS.teaching = async (v)=>{
   function finishDraftPolygon(){
     if(draftPolygon.length<3) return;
     state.rois.push({name:"",geometry:{points:draftPolygon.map(p=>[p[0],p[1]])},params:{defects:[]},defects:[]});
+    selectedRoiIdx=state.rois.length-1;
     draftPolygon=[]; renderRoiList(); renderCaptureButtons(); drawCanvas();
   }
 
@@ -357,16 +379,18 @@ VIEWS.teaching = async (v)=>{
       const col=selectedRoiIdx===i?"#22d3ee":"#3b82f6";
       drawPolyStroke(ctx, pts, scale, scale, col, true);
       if(pts[0]){ ctx.fillStyle=col; ctx.font="13px sans-serif"; ctx.fillText(r.name||("ROI"+(i+1)), pts[0][0]*scale+3, pts[0][1]*scale+14); }
-      if(selectedRoiIdx===i){
-        pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,6,0,Math.PI*2);
-          ctx.fillStyle="#22d3ee"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke(); });
-      }
+      pts.forEach((p,vi)=>{
+        if(selectedRoiIdx===i || dragVertex?.roi===i){
+          ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,8,0,Math.PI*2);
+          ctx.fillStyle="#22d3ee"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.stroke();
+        }
+      });
     });
     if(draftPolygon.length){
       ctx.setLineDash([6,4]); drawPolyStroke(ctx, draftPolygon, scale, scale, "#22d3ee", draftPolygon.length>=3);
       ctx.setLineDash([]);
-      draftPolygon.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,i===0?7:4,0,Math.PI*2);
-        ctx.fillStyle=i===0?"#22d3ee":"#3b82f6"; ctx.fill(); });
+      draftPolygon.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,8,0,Math.PI*2);
+        ctx.fillStyle=i===0?"#22d3ee":"#60a5fa"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke(); });
     }
     if(state.drawing){ const d=state.drawing; ctx.strokeStyle="#22d3ee"; ctx.strokeRect(d.x,d.y,d.w,d.h); }
   }
@@ -375,8 +399,12 @@ VIEWS.teaching = async (v)=>{
   canvas.onpointerdown=(e)=>{
     canvas.setPointerCapture(e.pointerId);
     const p=pointerToCanvas(e);
-    const vi=hitVertex(p.x,p.y);
-    if(vi!=null){ dragVertex={roi:selectedRoiIdx, vi}; return; }
+    const dvi=hitDraftVertex(p.x,p.y);
+    if(dvi!=null){ dragDraftVertex=dvi; return; }
+    const hv=hitAnyVertex(p.x,p.y);
+    if(hv){ selectedRoiIdx=hv.roi; dragVertex=hv; drawCanvas(); return; }
+    const ri=hitRoiAt(p.x,p.y);
+    if(ri!=null){ selectedRoiIdx=ri; draftPolygon=[]; drawCanvas(); return; }
     if(drawTool==="rect"){ start=p; return; }
     const ip=[Math.round(p.x/scale), Math.round(p.y/scale)];
     if(draftPolygon.length>=3 && geoDist(ip, draftPolygon[0])<14/scale){ finishDraftPolygon(); return; }
@@ -384,6 +412,10 @@ VIEWS.teaching = async (v)=>{
   };
   canvas.onpointermove=(e)=>{
     const p=pointerToCanvas(e);
+    if(dragDraftVertex!=null){
+      draftPolygon[dragDraftVertex]=[Math.round(p.x/scale), Math.round(p.y/scale)];
+      drawCanvas(); return;
+    }
     if(dragVertex){
       const pts=geoPoints(state.rois[dragVertex.roi].geometry);
       pts[dragVertex.vi]=[Math.round(p.x/scale), Math.round(p.y/scale)];
@@ -396,7 +428,7 @@ VIEWS.teaching = async (v)=>{
     }
   };
   canvas.onpointerup=(e)=>{ try{canvas.releasePointerCapture(e.pointerId);}catch(_){}
-    dragVertex=null;
+    dragVertex=null; dragDraftVertex=null;
     if(drawTool==="rect" && state.drawing && state.drawing.w>8 && state.drawing.h>8){
       const d=state.drawing;
       state.rois.push({name:"",geometry:normalizeGeometry({x:Math.round(d.x/scale),y:Math.round(d.y/scale),
