@@ -21,7 +21,11 @@
   nav button { background:transparent; color:var(--muted); border:1px solid transparent; padding:8px 14px; border-radius:8px; cursor:pointer; font-size:14px; }
   nav button.active { color:var(--ink); background:var(--panel2); border-color:var(--line); }
   main { padding:18px; max-width:1200px; margin:0 auto; }
-  main.inspect-wide { max-width:min(1600px, 100%); }
+  main.inspect-wide, main.teach-wide { max-width:min(1600px, 100%); }
+  .teach-layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,340px); gap:16px; align-items:start; margin-top:12px; }
+  .teach-main canvas { display:block; max-width:100%; }
+  .roi-preview-panel { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  #roiPreviewCanvas { display:block; background:#000; border:1px solid var(--line); border-radius:8px; max-width:100%; image-rendering:pixelated; }
   .grid { display:grid; gap:16px; }
   .cols-2 { grid-template-columns:1fr 1fr; }
   .cols-3 { grid-template-columns:repeat(3,1fr); }
@@ -189,6 +193,7 @@ async function refreshHealth(){
 async function renderView(){
   const v=document.getElementById("view");
   v.classList.toggle("inspect-wide", state.tab==="inspect");
+  v.classList.toggle("teach-wide", state.tab==="teaching");
   v.innerHTML="<p class='muted'>Loading...</p>";
   try { await VIEWS[state.tab](v); } catch(e){ v.innerHTML=`<div class='card'>Error: ${e.message}</div>`; }
 }
@@ -271,9 +276,17 @@ VIEWS.teaching = async (v)=>{
       <span class="muted" id="toolHint">Click points around the part; double-click or click first point to close.</span>
       <span class="spacer"></span>
       <button class="btn secondary" id="tclear">Clear</button><button class="btn" id="tsaveroi">Save ROIs</button></div>
-    <div class="grid cols-2" style="margin-top:12px">
-      <canvas id="tcanvas" width="600" height="300"></canvas>
-      <div><div id="roilist"></div></div>
+    <div class="teach-layout">
+      <div class="teach-main"><canvas id="tcanvas" width="900" height="500"></canvas></div>
+      <div class="teach-side">
+        <div id="roilist"></div>
+        <div class="roi-preview-panel">
+          <label>ROI yakınlaştırma</label>
+          <div class="muted" style="margin-bottom:8px;font-size:12px">Poligon içi büyütülmüş — modele giden alan (dışı siyah)</div>
+          <canvas id="roiPreviewCanvas" width="280" height="200"></canvas>
+          <div class="muted" id="roiPreviewLbl" style="margin-top:6px;font-size:12px">ROI seçin veya poligon çizin</div>
+        </div>
+      </div>
     </div></div>`);
   v.appendChild(editor);
 
@@ -306,8 +319,12 @@ VIEWS.teaching = async (v)=>{
     selectedRoiIdx=null; draftPolygon=[]; drawCanvas(); renderRoiList(); renderCaptureButtons(); refreshTeachStatus(); };
 
   const canvas=editor.querySelector("#tcanvas"); const ctx=canvas.getContext("2d");
+  const roiPreview=editor.querySelector("#roiPreviewCanvas");
+  const roiPreviewLbl=editor.querySelector("#roiPreviewLbl");
+  const pctx=roiPreview.getContext("2d");
   let scale=1, imgObj=null, drawTool="polygon", draftPolygon=[], selectedRoiIdx=null, dragVertex=null, dragDraftVertex=null;
   const VERT_R=3, VERT_HIT=4, CLOSE_HIT=5;
+  const SNAP_MAX_W=1100, PREVIEW_PAD=0.12, PREVIEW_MAX_ZOOM=4;
   const toolPoly=editor.querySelector("#toolPoly"), toolRect=editor.querySelector("#toolRect"), toolHint=editor.querySelector("#toolHint");
 
   function setDrawTool(t){
@@ -365,10 +382,65 @@ VIEWS.teaching = async (v)=>{
     draftPolygon=[]; renderRoiList(); renderCaptureButtons(); drawCanvas();
   }
 
+  function bboxFromPts(pts){
+    let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
+    pts.forEach(([x,y])=>{ x1=Math.min(x1,x); y1=Math.min(y1,y); x2=Math.max(x2,x); y2=Math.max(y2,y); });
+    return [x1,y1,x2,y2];
+  }
+
+  function renderRoiPreview(){
+    if(!imgObj||!imgObj.complete){ return; }
+    const iw=imgObj.naturalWidth, ih=imgObj.naturalHeight;
+    let pts=null, label="";
+    if(selectedRoiIdx!=null && state.rois[selectedRoiIdx]){
+      pts=geoPoints(state.rois[selectedRoiIdx].geometry);
+      label=state.rois[selectedRoiIdx].name||("ROI "+(selectedRoiIdx+1));
+    }else if(draftPolygon.length>=3){
+      pts=draftPolygon; label="Çiziliyor…";
+    }else{
+      roiPreview.width=280; roiPreview.height=120;
+      pctx.fillStyle="#0f1419"; pctx.fillRect(0,0,roiPreview.width,roiPreview.height);
+      pctx.fillStyle="#8b98a9"; pctx.font="13px system-ui,sans-serif";
+      pctx.fillText("ROI seçin veya poligon çizin",12,36);
+      roiPreviewLbl.textContent="Önizleme yok";
+      return;
+    }
+    const [x1,y1,x2,y2]=bboxFromPts(pts);
+    const pad=Math.max(6, Math.round(Math.max(x2-x1,y2-y1)*PREVIEW_PAD));
+    const bx1=Math.max(0,x1-pad), by1=Math.max(0,y1-pad);
+    const bx2=Math.min(iw-1,x2+pad), by2=Math.min(ih-1,y2+pad);
+    const bw=bx2-bx1+1, bh=by2-by1+1;
+    const off=document.createElement("canvas");
+    off.width=bw; off.height=bh;
+    const octx=off.getContext("2d");
+    octx.drawImage(imgObj,bx1,by1,bw,bh,0,0,bw,bh);
+    octx.globalCompositeOperation="destination-in";
+    octx.beginPath();
+    pts.forEach(([px,py],i)=>{ const lx=px-bx1, ly=py-by1; i?octx.lineTo(lx,ly):octx.moveTo(lx,ly); });
+    octx.closePath(); octx.fill();
+    const sideW=roiPreview.parentElement?.clientWidth||320;
+    const zoom=Math.min(PREVIEW_MAX_ZOOM, (sideW-8)/bw, 320/bh, 320/bw);
+    const dw=Math.max(1,Math.round(bw*zoom)), dh=Math.max(1,Math.round(bh*zoom));
+    roiPreview.width=dw; roiPreview.height=dh;
+    roiPreview.style.width=dw+"px"; roiPreview.style.height=dh+"px";
+    pctx.fillStyle="#000"; pctx.fillRect(0,0,dw,dh);
+    pctx.drawImage(off,0,0,dw,dh);
+    pctx.strokeStyle="#22d3ee"; pctx.lineWidth=2;
+    pctx.beginPath();
+    pts.forEach(([px,py],i)=>{ const lx=(px-bx1)*zoom, ly=(py-by1)*zoom; i?pctx.lineTo(lx,ly):pctx.moveTo(lx,ly); });
+    pctx.closePath(); pctx.stroke();
+    roiPreviewLbl.textContent=`${label} · ${Math.round(zoom*100)}% · ${bw}×${bh}px`;
+  }
+
   editor.querySelector("#tsnap").onclick=async()=>{
     const snap=await api("/teaching/snapshot"); state.snapshot=snap; imgObj=new Image();
-    imgObj.onload=()=>{ const maxW=600; scale=Math.min(1,maxW/snap.width); canvas.width=snap.width*scale; canvas.height=snap.height*scale;
-      canvas.style.width=canvas.width+"px"; canvas.style.height=canvas.height+"px"; drawCanvas(); };
+    imgObj.onload=()=>{
+      const maxW=Math.min(SNAP_MAX_W, snap.width, Math.max(800, window.innerWidth-380));
+      scale=Math.min(1,maxW/snap.width);
+      canvas.width=Math.round(snap.width*scale); canvas.height=Math.round(snap.height*scale);
+      canvas.style.width=canvas.width+"px"; canvas.style.height=canvas.height+"px";
+      drawCanvas();
+    };
     imgObj.src=snap.image;
   };
 
@@ -394,6 +466,7 @@ VIEWS.teaching = async (v)=>{
         ctx.fillStyle=i===0?"#22d3ee":"#60a5fa"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke(); });
     }
     if(state.drawing){ const d=state.drawing; ctx.strokeStyle="#22d3ee"; ctx.strokeRect(d.x,d.y,d.w,d.h); }
+    renderRoiPreview();
   }
 
   let start=null;
@@ -452,6 +525,8 @@ VIEWS.teaching = async (v)=>{
       </div>`);
       wrap.querySelector("input").oninput=(e)=>{r.name=e.target.value;};
       wrap.querySelector("input").onfocus=()=>{ selectedRoiIdx=i; drawCanvas(); };
+      wrap.querySelector(".roiRow").style.cursor="pointer";
+      wrap.querySelector(".roiRow").onclick=(e)=>{ if(e.target.tagName==="INPUT"||e.target.tagName==="BUTTON") return; selectedRoiIdx=i; drawCanvas(); };
       wrap.querySelector('[data-act="del"]').onclick=()=>{state.rois.splice(i,1);renderRoiList();renderCaptureButtons();drawCanvas();};
       wrap.querySelector('[data-act="adddef"]').onclick=()=>{
         if(!r.defects) r.defects=[];
