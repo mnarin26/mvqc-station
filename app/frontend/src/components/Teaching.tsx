@@ -8,7 +8,9 @@ interface EditRoi { name: string; geometry: Geometry; }
 
 type DrawTool = "polygon" | "rect";
 
-const CLOSE_PX = 14;
+const VERT_R = 3;
+const VERT_HIT = 5;
+const CLOSE_PX = 5;
 
 export function Teaching() {
   const [products, setProducts] = useState<any[]>([]);
@@ -203,7 +205,7 @@ export function Teaching() {
               })}
               {selected != null && rois[selected]?.geometry.points.map((p, vi) => (
                 <Circle key={`v${selected}-${vi}`}
-                  x={p[0] * scale} y={p[1] * scale} radius={6}
+                  x={p[0] * scale} y={p[1] * scale} radius={VERT_R}
                   fill="#22d3ee" stroke="#fff" strokeWidth={1} draggable
                   onDragMove={(e) => moveVertex(selected, vi, e.target.x(), e.target.y())}
                   onDragEnd={(e) => moveVertex(selected, vi, e.target.x(), e.target.y())}
@@ -213,7 +215,7 @@ export function Teaching() {
                 <Line points={flatPts(draftPts)} stroke="#22d3ee" strokeWidth={2} dash={[6, 4]} />
               )}
               {draftPts.map((p, i) => (
-                <Circle key={`d${i}`} x={p[0] * scale} y={p[1] * scale} radius={i === 0 ? 7 : 4}
+                <Circle key={`d${i}`} x={p[0] * scale} y={p[1] * scale} radius={VERT_R}
                   fill={i === 0 ? "#22d3ee" : "#3b82f6"} />
               ))}
               {draftRect && <Rect x={draftRect.x} y={draftRect.y} width={draftRect.w} height={draftRect.h}

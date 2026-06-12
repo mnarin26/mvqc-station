@@ -307,6 +307,7 @@ VIEWS.teaching = async (v)=>{
 
   const canvas=editor.querySelector("#tcanvas"); const ctx=canvas.getContext("2d");
   let scale=1, imgObj=null, drawTool="polygon", draftPolygon=[], selectedRoiIdx=null, dragVertex=null, dragDraftVertex=null;
+  const VERT_R=3, VERT_HIT=4, CLOSE_HIT=5;
   const toolPoly=editor.querySelector("#toolPoly"), toolRect=editor.querySelector("#toolRect"), toolHint=editor.querySelector("#toolHint");
 
   function setDrawTool(t){
@@ -329,7 +330,7 @@ VIEWS.teaching = async (v)=>{
 
   function hitDraftVertex(px,py){
     for(let i=0;i<draftPolygon.length;i++){
-      if(geoDist([px,py],[draftPolygon[i][0]*scale,draftPolygon[i][1]*scale])<12) return i;
+      if(geoDist([px,py],[draftPolygon[i][0]*scale,draftPolygon[i][1]*scale])<VERT_HIT) return i;
     }
     return null;
   }
@@ -337,7 +338,7 @@ VIEWS.teaching = async (v)=>{
     for(let ri=state.rois.length-1;ri>=0;ri--){
       const pts=geoPoints(state.rois[ri].geometry);
       for(let vi=0;vi<pts.length;vi++){
-        if(geoDist([px,py],[pts[vi][0]*scale,pts[vi][1]*scale])<12) return {roi:ri,vi};
+        if(geoDist([px,py],[pts[vi][0]*scale,pts[vi][1]*scale])<VERT_HIT) return {roi:ri,vi};
       }
     }
     return null;
@@ -381,15 +382,15 @@ VIEWS.teaching = async (v)=>{
       if(pts[0]){ ctx.fillStyle=col; ctx.font="13px sans-serif"; ctx.fillText(r.name||("ROI"+(i+1)), pts[0][0]*scale+3, pts[0][1]*scale+14); }
       pts.forEach((p,vi)=>{
         if(selectedRoiIdx===i || dragVertex?.roi===i){
-          ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,8,0,Math.PI*2);
-          ctx.fillStyle="#22d3ee"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=2; ctx.stroke();
+          ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,VERT_R,0,Math.PI*2);
+          ctx.fillStyle="#22d3ee"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke();
         }
       });
     });
     if(draftPolygon.length){
       ctx.setLineDash([6,4]); drawPolyStroke(ctx, draftPolygon, scale, scale, "#22d3ee", draftPolygon.length>=3);
       ctx.setLineDash([]);
-      draftPolygon.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,8,0,Math.PI*2);
+      draftPolygon.forEach((p,i)=>{ ctx.beginPath(); ctx.arc(p[0]*scale,p[1]*scale,VERT_R,0,Math.PI*2);
         ctx.fillStyle=i===0?"#22d3ee":"#60a5fa"; ctx.fill(); ctx.strokeStyle="#fff"; ctx.lineWidth=1; ctx.stroke(); });
     }
     if(state.drawing){ const d=state.drawing; ctx.strokeStyle="#22d3ee"; ctx.strokeRect(d.x,d.y,d.w,d.h); }
@@ -407,7 +408,7 @@ VIEWS.teaching = async (v)=>{
     if(ri!=null){ selectedRoiIdx=ri; draftPolygon=[]; drawCanvas(); return; }
     if(drawTool==="rect"){ start=p; return; }
     const ip=[Math.round(p.x/scale), Math.round(p.y/scale)];
-    if(draftPolygon.length>=3 && geoDist(ip, draftPolygon[0])<14/scale){ finishDraftPolygon(); return; }
+    if(draftPolygon.length>=3 && geoDist(ip, draftPolygon[0])<CLOSE_HIT/scale){ finishDraftPolygon(); return; }
     draftPolygon.push(ip); drawCanvas();
   };
   canvas.onpointermove=(e)=>{
